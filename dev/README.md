@@ -1,5 +1,7 @@
 # 🧪 KID 開發者環境（Haven）
 
+[![CI](https://github.com/kid-core/haven/actions/workflows/ci.yml/badge.svg)](https://github.com/kid-core/haven/actions)
+
 ## 為什麼在 Haven？
 Haven 是 KID 的開發與實驗區。
 Core 是生產線，Haven 是實驗室。
