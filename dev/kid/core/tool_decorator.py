@@ -1,0 +1,75 @@
+"""@tool decorator + default registry singleton."""
+
+from __future__ import annotations
+
+import functools
+import inspect
+from typing import Any, Callable, Optional
+
+from .tool_spec import ToolSpec
+
+
+# ---------------------------------------------------------------------------
+# Module-level default registry  (lazy init)
+# ---------------------------------------------------------------------------
+
+_default_registry: Optional["ToolRegistry"] = None
+
+
+def get_default_registry() -> "ToolRegistry":
+    """Return the module-level default ToolRegistry, creating it lazily."""
+    global _default_registry  # noqa: PLW0603
+    if _default_registry is None:
+        from .tool_registry import ToolRegistry
+
+        _default_registry = ToolRegistry()
+    return _default_registry
+
+
+# ---------------------------------------------------------------------------
+# @tool decorator
+# ---------------------------------------------------------------------------
+
+def tool(
+    _func: Optional[Callable[..., Any]] = None,
+    *,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    parameters: Optional[dict] = None,
+    registry: Optional["ToolRegistry"] = None,
+) -> Any:
+    """Mark an async function as a tool and register it.
+
+    Bare (``@tool``) or parameterised (``@tool(name="...")``).
+    Attaches the ToolSpec as ``__tool_spec__`` on the wrapper.
+    """
+
+    def _decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+        if not inspect.iscoroutinefunction(fn):
+            raise TypeError(
+                f"@tool can only decorate async functions. "
+                f"{fn.__qualname__} is not async."
+            )
+
+        _name = name or fn.__name__
+        _desc = description or (fn.__doc__ or "").strip().split("\n")[0]
+        _params: dict = (
+            parameters
+            if parameters is not None
+            else {"type": "object", "properties": {}, "required": []}
+        )
+
+        spec = ToolSpec(name=_name, description=_desc, parameters=_params, handler=fn)
+        reg = registry or get_default_registry()
+        reg.add(spec)
+
+        @functools.wraps(fn)
+        async def _wrapper(*args: Any, **kwargs: Any) -> Any:
+            return await fn(*args, **kwargs)
+
+        _wrapper.__tool_spec__ = spec  # type: ignore[attr-defined]
+        return _wrapper
+
+    if _func is not None:
+        return _decorator(_func)
+    return _decorator
