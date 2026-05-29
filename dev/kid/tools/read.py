@@ -3,11 +3,14 @@ from pathlib import Path
 
 from core.tool_decorator import tool
 
-ALLOWED_PREFIX = "/mnt/z/"
-
 # Common binary file extensions / magic checks
 # We use a heuristic: read the first 8 KB and check for null bytes.
 _READ_CHUNK = 8192
+
+
+def _allowed_prefix() -> str:
+    """Return the allowed path prefix (overridable via env for CI)."""
+    return os.getenv("HAVEN_ALLOWED_PREFIX", "/mnt/z/")
 
 
 def _is_binary(filepath: str) -> bool:
@@ -35,8 +38,9 @@ async def read_file(path: str) -> str:
     resolved = os.path.realpath(os.path.abspath(path))
 
     # Must be under /mnt/z/
-    if not resolved.startswith(ALLOWED_PREFIX):
-        return f"[error] Path must be under /mnt/z/.  Got: {resolved}"
+    prefix = _allowed_prefix()
+    if not resolved.startswith(prefix):
+        return f"[error] Path must be under {prefix.strip('/')}/.  Got: {resolved}"
 
     # Check existence
     if not os.path.exists(resolved):
