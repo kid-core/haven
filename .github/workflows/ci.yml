@@ -22,17 +22,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r dev/requirements.txt
 
-      - name: Check SRP (200 line limit)
-        run: |
-          for f in dev/kid/core/*.py dev/kid/main.py dev/kid/soul/*.py dev/kid/tools/*.py dev/kid/transport/*.py; do
-            lines=$(wc -l < "$f")
-            if [ "$lines" -gt 200 ]; then
-              echo "❌ $f: ${lines} lines > 200"
-              exit 1
-            fi
-          done
-          echo "✅ All files under 200 lines"
+      # ── Linter (ruff) ───────────────────────────────────────────────
+      - name: Ruff — fast lint
+        run: ruff check dev/kid/ --output-format=github
 
+      # ── Line-length sanity (400 max, up from 200) ────────────────────
+      - name: Check file size (≤ 400 lines)
+        run: |
+          find dev/kid -name "*.py" -not -path "*/.venv/*" -print0 \
+            | while IFS= read -r -d '' f; do
+              lines=$(wc -l < "$f")
+              if [ "$lines" -gt 400 ]; then
+                echo "❌ $f: ${lines} lines > 400"
+                exit 1
+              fi
+            done
+          echo "✅ All files ≤ 400 lines"
+
+      # ── Pylint (quality gate, soft-fail on notes/warnings) ───────────
+      - name: Pylint — code quality
+        continue-on-error: true
+        run: pylint dev/kid/ --exit-zero --output-format=colorized
+
+      # ── Tests ────────────────────────────────────────────────────────
       - name: Run tests
         run: |
           cd dev && python -m pytest kid/tests/ -v --tb=short

@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 
 from core.tool_decorator import tool
+from core.categories import ToolCategory
+from core.policy import ToolPolicy
 
 # Common binary file extensions / magic checks
 # We use a heuristic: read the first 8 KB and check for null bytes.
@@ -23,7 +25,10 @@ def _is_binary(filepath: str) -> bool:
         return False
 
 
-@tool
+@tool(
+    category=ToolCategory.FILES,
+    policy=ToolPolicy(timeout=10.0, rate_limit=2.0),
+)
 async def read_file(path: str) -> str:
     """Read the contents of a file.
 

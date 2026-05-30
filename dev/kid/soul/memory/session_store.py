@@ -1,4 +1,4 @@
-"""JSON file-backed session-history persistence."""
+"""JSON file-backed session-history persistence (migrated from soul.memory)."""
 
 from __future__ import annotations
 
@@ -6,10 +6,9 @@ import json
 import logging
 from pathlib import Path
 
-
 logger = logging.getLogger(__name__)
 
-SESSION_DIR = Path(__file__).resolve().parent.parent / "sessions"
+SESSION_DIR = Path(__file__).resolve().parent.parent.parent / "sessions"
 
 
 class SessionStore:
@@ -20,12 +19,11 @@ class SessionStore:
         self._max = max_messages
         self._dir.mkdir(parents=True, exist_ok=True)
 
-    def load(self, session_id: str) -> list[dict]:
-        """Retrieve message history for *session_id*.
+    @property
+    def session_dir(self) -> Path:
+        return self._dir
 
-        Returns an empty list if the file is missing, corrupt, or
-        contains non-list JSON (e.g. a plain object).
-        """
+    def load(self, session_id: str) -> list[dict]:
         path = self._dir / f"{session_id}.json"
         if not path.exists():
             return []
@@ -41,15 +39,13 @@ class SessionStore:
             return []
 
     def save(self, session_id: str, messages: list[dict]) -> None:
-        """Persist messages, trimming oldest beyond *max_messages*."""
         path = self._dir / f"{session_id}.json"
-        # Ensure parent directory exists (session IDs with slashes)
         path.parent.mkdir(parents=True, exist_ok=True)
-
-        if self._max <= 0:
-            trimmed: list[dict] = []
+        if self._max == 0:
+            trimmed = []
+        elif self._max > 0 and len(messages) > self._max:
+            trimmed = messages[-self._max:]
         else:
-            trimmed = messages[-self._max :] if len(messages) > self._max else messages
-
+            trimmed = messages
         with open(path, "w") as f:
             json.dump(trimmed, f, ensure_ascii=False, indent=2)

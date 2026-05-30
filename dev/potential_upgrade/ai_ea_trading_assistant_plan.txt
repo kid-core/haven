@@ -1,0 +1,79 @@
+=== AI 輔助程式交易 — 未來延伸規劃 ===
+建立日期：2026-05-29
+背景：Cris 正在學習程式交易，使用可調參數的 EA，探索 AI 如何輔助 EA 交易策略開發與參數最佳化。
+
+========================================
+一、AI + EA 整合層級
+========================================
+
+Level 1 — AI 輔助分析（立即可用，不需改 EA）
+  - 新聞情緒分析（FXStreet、ForexFactory）
+  - 市場狀態分類（趨勢/盤整/高波動）
+  - 回測報告解讀（sharpe、drawdown、win rate）
+  - 交易日記自動記錄到 Notion
+
+Level 2 — AI 產生訊號，EA 執行（hybrid 模式）
+  - AI/KID 當策略大腦，分析多時間框架 + news sentiment
+  - 輸出交易訊號給 EA
+  - EA 負責低延遲執行 + 風控（止損、資金管理）
+  - 通訊方式：EA 開 localhost HTTP/socket server
+
+Level 3 — AI 動態優化 EA 參數（Cris 最感興趣的模式）
+  - KID 根據市場 regime 分析，建議參數調整
+  - 遺傳演算法 / Bayesian optimization / grid search
+  - Cris 在本地機器跑 optimization script
+  - 結果回傳給 KID 分析，迭代優化
+
+========================================
+二、KID 可以幫忙的事（不碰 MT4 也能做）
+========================================
+
+可以做的：
+  ✓ 分析回測 CSV/JSON 報表（sharpe、profit factor、drawdown 分佈）
+  ✓ 參數 sensitivity analysis（找出 critical vs noise 參數）
+  ✓ 多組參數 Pareto frontier 排序（高回報 + 低風險）
+  ✓ 交易明細分析（進場時機品質、止損距離合理性）
+  ✓ 寫 Python optimization script（GA / Bayesian / grid search）
+  ✓ 市場 regime 分析（volatility profile、趨勢強度）
+
+不適合做的：
+  ✗ 直接連 MT4 下單（風險太高，不授權）
+  ✗ tick-by-tick 即時回測（latency 不對）
+  ✗ 決定倉位大小（風控是使用者自己的規則）
+
+========================================
+三、Level 3 實際落地路徑
+========================================
+
+1. Cris 提供 EA 邏輯 + 參數範圍
+2. KID 寫 Python optimization script
+3. Cris 在自己的機器跑（用自己的 data feed）
+4. 結果丟回給 KID 分析
+5. KID 給參數建議
+6. Cris 手動調整 EA 或寫自動更新腳本
+7. Loop ♻️
+
+原則：KID 提建議，Cris 執行決策。
+
+========================================
+四、與 Haven 的關係
+========================================
+
+Level 1 最適合先由 Haven 做：
+  - 背景監控市場、拉資料
+  - 整合 Notion / Discord / Telegram 通知
+  - 等 skills 層長出來後再往 Level 2 推進
+
+Level 3 的參數最佳化引擎可作為 Haven 的獨立模組，
+非核心功能，等 MVP 穩定後再開發。
+
+========================================
+五、參考資源
+========================================
+
+- MQL4/MQL5 文件
+- 外匯 EA 開發社群
+- ForexFactory 日曆 API
+- FXStreet 新聞 API
+
+=== 歡迎隨時追加新想法 ===

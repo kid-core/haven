@@ -1,0 +1,88 @@
+=== Haven 技能系統 — 未來升級規劃 ===
+建立日期：2026-05-29
+決策背景：Haven Core Prototype 建置階段，先不疊基礎設施，預留接口等 MVP 穩定後再實作。
+
+========================================
+一、為什麼需要技能系統
+========================================
+
+OpenClaw 的 Skill（SKILL.md）本質上是「system prompt 注入片段 + 工具定義」，
+能動態擴充 agent 能力。Haven 目前只有靜態的 ToolRegistry，無法：
+
+  - 動態載入新能力（讀 SKILL.md 自動擴充）
+  - 靈活組合不同的 system prompt 片段
+  - 複用 OpenClaw 社群生態（13,000+ 現有 Skills）
+
+========================================
+二、建議的實作路徑（分三階段）
+========================================
+
+Phase 1 — 轉換層（輕量，MVP 後即可做）
+----------------------------------------
+
+在 kid/ 下新增一個腳本 openclaw_to_haven.py：
+  - 解析 SKILL.md 的 YAML frontmatter + Markdown 指令
+  - 提取 tool 定義，生成對應的 Python function + JSON Schema
+  - 輸出可直接註冊進 ToolRegistry 的格式
+
+同時在 kid/ 下預留 skills/ 目錄結構（先空著）：
+  kid/skills/
+  kid/skills/__init__.py    # 空，以後做 loader
+
+Phase 2 — 原生 Skill Loader（Haven 穩定後）
+--------------------------------------------
+
+新增 kid/skills/loader.py：
+  - 啟動時掃描 skills/ 目錄
+  - 每份 skill 定義 tools + system prompt 片段
+  - 自動注入到 Router 的 context
+  - 支援動態啟停（指令控制）
+
+同時新增 kid/skills/formats/：
+  - haven.md：Haven 原生的輕量 skill 格式
+  - openclaw_compat.py：相容層，吃 SKILL.md
+
+Phase 3 — 技能市場整合（未來）
+--------------------------------
+
+  - 直接從 ClawHub 下載安裝
+  - 安裝前 VirusTotal 掃描檢查
+  - skill 版本管理
+
+========================================
+三、架構變動示意
+========================================
+
+現有架構（kid/）：
+  core/tool_registry.py   ← 靜態註冊
+  core/router.py          ← 固定 system prompt
+
+未來架構（kid/）：
+  core/tool_registry.py   ← 不變
+  core/router.py          ← 改為可接受動態 system prompt 注入
+  skills/
+    loader.py             ← 新增：動態載入引擎
+    formats/
+      haven.md            ← 新增：原生格式定義
+      openclaw_compat.py  ← 新增：SKILL.md 相容層
+    registry.py           ← 新增：比 ToolRegistry 更通用的註冊器
+
+========================================
+四、注意事項（給未來的自己）
+========================================
+
+1. 不要先做！等 kid/main.py 可以順跑完整對話再考慮。
+2. CONVENTIONS_EN.md 的零功能蔓延原則：新功能 = 新模組，不走 if-else 硬塞。
+3. 安全性：參考 OpenClaw 的做法，載入外來 skill 前做基本掃描。
+4. 相容性：保留轉換層 interface，以後改架構不需重寫 tools。
+
+========================================
+五、參考資源
+========================================
+
+- OpenClaw Skills 文件：https://docs.openclaw.ai/tools/skills
+- ClawHub 官方程式庫：https://github.com/openclaw/clawhub
+- awesome-openclaw-skills：https://github.com/VoltAgent/awesome-openclaw-skills
+- ClawSkills.sh 線上瀏覽：https://clawskills.sh/
+
+=== 本文件歡迎隨時追加新想法 ===

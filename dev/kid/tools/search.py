@@ -7,11 +7,16 @@ import os
 import httpx
 
 from core.tool_decorator import tool
+from core.categories import ToolCategory
+from core.policy import ToolPolicy
 
 TAVILY_URL = "https://api.tavily.com/search"
 
 
-@tool
+@tool(
+    category=ToolCategory.WEB,
+    policy=ToolPolicy(timeout=15.0, rate_limit=5.0),
+)
 async def web_search(query: str, max_results: int = 5) -> str:
     """Search the web for current information via Tavily.
 

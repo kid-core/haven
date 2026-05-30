@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 
 from core.tool_decorator import tool
+from core.categories import ToolCategory
+from core.policy import ToolPolicy
 
 
 def _allowed_prefix() -> str:
@@ -24,7 +26,10 @@ def _is_protected(path: str) -> bool:
     return False
 
 
-@tool
+@tool(
+    category=ToolCategory.FILES,
+    policy=ToolPolicy(require_confirm=True, timeout=10.0, rate_limit=2.0),
+)
 async def write_file(path: str, content: str) -> str:
     """Write content to a file.
 

@@ -20,31 +20,63 @@ kid/
 │   ├── __init__.py
 │   ├── base_provider.py    # Abstract BaseProvider + ProviderError
 │   ├── http_provider.py    # Config-driven HttpProvider (one class, any API)
-│   ├── router.py           # State machine pipeline (non-recursive ReAct loop)
-│   ├── tool_spec.py        # ToolSpec dataclass
-│   ├── tool_registry.py    # ToolRegistry with dict dispatch
-│   ├── tool_decorator.py   # @tool decorator + default registry
+│   ├── categories.py       # Phase 0: ToolCategory enum + default_policy()
+│   ├── policy.py           # Phase 0: ToolPolicy/ToolProfile/RateLimitTracker
+│   ├── category_router.py  # Phase 1b: CategoryRule/ExecutionMode routing
+│   ├── router.py           # State machine pipeline (non-recursive ReAct loop w/ Phase 0-4)
+│   ├── tool_spec.py        # ToolSpec dataclass (with category + policy)
+│   ├── tool_registry.py    # ToolRegistry with dict dispatch + policy enforce
+│   ├── tool_decorator.py   # @tool decorator + default registry (with category + policy)
 │   ├── models.py           # Pydantic v2 data models
 │   └── exceptions.py       # Domain exception hierarchy
 ├── tools/
 │   ├── __init__.py         # Register all built-in tools
-│   ├── cmd.py              # Safe shell command execution
-│   ├── write.py            # File write with path validation
-│   └── read.py             # File read
+│   ├── cmd.py              # Phase 0: Safe shell execution (SYSTEM, require_confirm)
+│   ├── write.py            # Phase 0: File write (FILES, require_confirm)
+│   ├── read.py             # Phase 0: File read (FILES)
+│   ├── search.py           # Phase 0: Tavily web search (WEB)
+│   ├── memory_search.py    # Phase 2a: Long-term memory CRUD + search
+│   ├── spawn_tool.py       # Phase 4: Sub-task delegation tool
+│   ├── spawn_child.py      # Phase 4: SpawnManager
+│   ├── ollama_provider.py  # Phase 2b: Ollama embedding + minicpm-v provider
+│   ├── categories.py       # Re-export shim → core.categories
+│   ├── policy.py           # Re-export shim → core.policy
+│   └── mcp/                # Phase 1a: MCP integration
+│       ├── __init__.py
+│       ├── client.py       # MCPStdioClient + MCPSseClient
+│       ├── discovery.py    # Dynamic MCP tool discovery
+│       └── registry.py     # MCPBridge → ToolRegistry bridge
 ├── soul/
 │   ├── __init__.py
-│   ├── identity.py         # System prompt assembly, self-awareness
-│   └── memory.py           # Session history management (JSON file-based)
+│   ├── identity.py         # System prompt assembly + LTM context
+│   └── memory/             # Phase 2a: Persistent memory subsystem
+│       ├── __init__.py
+│       ├── session_store.py    # SessionStore (migrated from old soul/memory.py)
+│       ├── long_term.py        # LongTermMemory — JSON-persistent CRUD
+│       ├── summarizer.py       # Rule-based conversation summary compression
+│       ├── index.py            # MemoryIndex — full-text keyword search
+│       └── vector_index.py     # Phase 2b: VectorIndex — ollama cosine similarity
+├── learning/               # Phase 3: Self-improvement subsystem
+│   ├── __init__.py
+│   ├── skill_store.py      # SkillStore — draft→active→deprecated lifecycle
+│   ├── skill_factory.py    # SkillFactory — pattern detection + draft generation
+│   └── skill_refiner.py    # SkillRefiner — usage tracking + auto-adjustment
 ├── transport/
 │   ├── __init__.py
 │   ├── terminal.py         # Simple terminal REPL
 │   ├── discord_bot.py      # Discord @mention and DM handling
 │   └── telegram_bot.py     # Telegram message handling
 ├── tests/
-│   ├── conftest.py         # Pytest fixtures (sys.path)
-│   └── test_smoke.py       # Structural smoke tests
+│   ├── conftest.py
+│   ├── test_smoke.py
+│   ├── test_phase0_policy.py
+│   ├── test_phase1_mcp.py
+│   ├── test_phase1b_2a.py
+│   ├── test_phase3_learning.py
+│   └── test_phase4_spawn.py
 ├── start.sh                # One-click launcher
-└── main.py                 # Entry point with graceful shutdown
+├── main.py                 # Entry point with graceful shutdown (all phases wired)
+└── ruff.toml               # Ruff linter config
 ```
 
 ---
@@ -271,8 +303,19 @@ cd /mnt/z/Haven/dev && ./kid/start.sh
 # Option B: Manual
 cd /mnt/z/Haven/dev && python kid/main.py
 
-# Run structural tests
+# Full test suite (143 tests)
 cd /mnt/z/Haven/dev && python -m pytest kid/tests/ -v
+
+# Per-phase tests
+python -m pytest kid/tests/test_phase0_policy.py -v     # Policy layer
+python -m pytest kid/tests/test_phase1_mcp.py -v         # MCP integration
+python -m pytest kid/tests/test_phase1b_2a.py -v         # Routing + Memory
+python -m pytest kid/tests/test_phase3_learning.py -v    # Self-learning
+python -m pytest kid/tests/test_phase4_spawn.py -v       # Sub-task delegation
+
+# Lint
+ruff check dev/kid/
+pylint dev/kid/
 ```
 
 Expected behaviour:

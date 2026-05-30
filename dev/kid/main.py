@@ -19,9 +19,11 @@ load_dotenv("/root/.openclaw/env")
 
 from core.tool_decorator import get_default_registry
 from core.http_provider import HttpProvider
+from core.category_router import CategoryRouter
 from core.router import Router
 from soul.identity import build_system_prompt
-from soul.memory import SessionStore
+from soul.memory import SessionStore, LongTermMemory
+from learning.skill_store import SkillStore
 import tools  # noqa: F401 — triggers @tool registration
 from transport import run_terminal, run_discord, run_telegram
 
@@ -60,6 +62,7 @@ async def main() -> None:
     registry = get_default_registry()
     logger.info("Registered tools: %s", [s.name for s in registry])
 
+    # ── Providers ───────────────────────────────────────────────────
     deepseek = HttpProvider(
         name="DeepSeek",
         model=PRIMARY_MODEL,
@@ -78,8 +81,32 @@ async def main() -> None:
             "X-Title": "Haven",
         },
     )
-    providers = [(deepseek, None), (openrouter, None)]
+    providers: list[tuple[HttpProvider, str | None]] = [
+        (deepseek, None), (openrouter, None)
+    ]
 
+    # ── Category Router (Phase 1b) + Ollama vision (Phase 2b) ──────
+    cat_router = CategoryRouter()
+    try:
+        from tools.ollama_provider import create_ollama_provider
+        ollama_minicpm = create_ollama_provider(
+            model="minicpm-v:latest", name="Ollama-minicpm-v",
+        )
+        if ollama_minicpm is not None:
+            providers.append((ollama_minicpm, None))
+            cat_router.set_provider("vision", ollama_minicpm)
+            logger.info("Ollama minicpm-v provider ready")
+    except Exception as exc:
+        logger.debug("Ollama provider skipped: %s", exc)
+
+    # ── Memory (Phase 2a) + Skills (Phase 3) ───────────────────────
+    ltm = LongTermMemory()
+    skill_store = SkillStore()
+    logger.info("Long-term memory: %d entries", len(ltm))
+    logger.info("Skills: %d active, %d drafts",
+                len(skill_store.get_active()), len(skill_store.get_drafts()))
+
+    # ── System prompt ───────────────────────────────────────────────
     system_prompt = build_system_prompt()
     session_store = SessionStore()
     router = Router(
@@ -87,6 +114,9 @@ async def main() -> None:
         providers=providers,
         system_prompt=system_prompt,
         session_store=session_store,
+        long_term_memory=ltm,         # Phase 2a — memory injection + auto-summarise
+        skill_store=skill_store,       # Phase 3 — learned skill injection
+        category_router=cat_router,    # Phase 1b — category-aware execution
     )
 
     # ── Banner ──────────────────────────────────────────────────────
@@ -97,6 +127,9 @@ async def main() -> None:
     print(f"  Primary:   DeepSeek {PRIMARY_MODEL}")
     print(f"  Fallback:  OpenRouter {FALLBACK_MODEL}")
     print(f"  Tools:     {[s.name for s in registry]}")
+    print(f"  Memory:    {len(ltm)} entries")
+    print(f"  Skills:    {len(skill_store.get_active())} active, {len(skill_store.get_drafts())} drafts")
+    print(f"  Ollama:    nomic-embed-text + minicpm-v {'✅' if ollama_minicpm else '⚠️  offline'}")
     print("=" * 50)
     print("")
 

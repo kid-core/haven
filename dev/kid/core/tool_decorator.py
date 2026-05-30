@@ -1,4 +1,4 @@
-"""@tool decorator + default registry singleton."""
+"""@tool decorator + default registry singleton (Phase 0 extended)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import functools
 import inspect
 from typing import Any, Callable, Optional
 
+from .categories import ToolCategory
+from .policy import ToolPolicy
 from .tool_spec import ToolSpec
 
 
@@ -36,12 +38,18 @@ def tool(
     name: Optional[str] = None,
     description: Optional[str] = None,
     parameters: Optional[dict] = None,
+    category: Optional[ToolCategory] = None,
+    policy: Optional[ToolPolicy] = None,
     registry: Optional["ToolRegistry"] = None,
 ) -> Any:
     """Mark an async function as a tool and register it.
 
-    Bare (``@tool``) or parameterised (``@tool(name="...")``).
+    Bare (``@tool``) or parameterised (``@tool(name="...", category=..., policy=...)``).
     Attaches the ToolSpec as ``__tool_spec__`` on the wrapper.
+
+    Phase 0 additions:
+        category:  ToolCategory enum for classification.
+        policy:    ToolPolicy for gates (confirm, rate_limit, timeout).
     """
 
     def _decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -58,8 +66,17 @@ def tool(
             if parameters is not None
             else {"type": "object", "properties": {}, "required": []}
         )
+        _category = category or ToolCategory.SYSTEM
+        _policy = policy or ToolPolicy()
 
-        spec = ToolSpec(name=_name, description=_desc, parameters=_params, handler=fn)
+        spec = ToolSpec(
+            name=_name,
+            description=_desc,
+            parameters=_params,
+            handler=fn,
+            category=_category,
+            policy=_policy,
+        )
         reg = registry or get_default_registry()
         reg.add(spec)
 

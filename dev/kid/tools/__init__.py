@@ -7,5 +7,7 @@ from . import cmd  # noqa: F401
 from . import write  # noqa: F401
 from . import read  # noqa: F401
 from . import search  # noqa: F401
+from . import memory_search  # noqa: F401
+from . import spawn_tool  # noqa: F401
 
 __all__ = ["ToolError"]

@@ -3,6 +3,8 @@ import shlex
 from pathlib import PureWindowsPath, PurePosixPath
 
 from core.tool_decorator import tool
+from core.categories import ToolCategory
+from core.policy import ToolPolicy
 
 DANGEROUS_COMMANDS = {"rm", "mv", "dd", "mkfs", "shutdown", "reboot", "sudo"}
 
@@ -83,7 +85,10 @@ def _is_safe(cmd: str) -> tuple[bool, str]:
     return True, ""
 
 
-@tool
+@tool(
+    category=ToolCategory.SYSTEM,
+    policy=ToolPolicy(require_confirm=True, timeout=30.0, rate_limit=10.0),
+)
 async def execute_command(cmd: str) -> str:
     """Run a shell command and return its output.
 

@@ -20,31 +20,63 @@ kid/
 │   ├── __init__.py
 │   ├── base_provider.py    # 抽象 BaseProvider + ProviderError
 │   ├── http_provider.py    # 設定驅動的 HttpProvider（一個類別適用任何 API）
-│   ├── router.py           # 狀態機管線（非遞迴 ReAct 迴圈）
-│   ├── tool_spec.py        # ToolSpec 資料類別
-│   ├── tool_registry.py    # 字典分發模式的 ToolRegistry
-│   ├── tool_decorator.py   # @tool 裝飾器 + 預設註冊器
+│   ├── categories.py       # Phase 0: ToolCategory enum + default_policy()
+│   ├── policy.py           # Phase 0: ToolPolicy/ToolProfile/RateLimitTracker
+│   ├── category_router.py  # Phase 1b: CategoryRule/ExecutionMode routing
+│   ├── router.py           # 狀態機管線（非遞迴 ReAct 迴圈，含 Phase 0-4 整合）
+│   ├── tool_spec.py        # ToolSpec 資料類別（含 category + policy）
+│   ├── tool_registry.py    # 字典分發模式的 ToolRegistry（含 policy enforce）
+│   ├── tool_decorator.py   # @tool 裝飾器 + 預設註冊器（含 category + policy）
 │   ├── models.py           # Pydantic v2 資料模型
 │   └── exceptions.py       # 領域例外層級
 ├── tools/
 │   ├── __init__.py         # 註冊所有內建工具
-│   ├── cmd.py              # 安全的 Shell 指令執行
-│   ├── write.py            # 具路徑驗證的檔案寫入
-│   └── read.py             # 檔案讀取
+│   ├── cmd.py              # Phase 0: 安全的 Shell 指令執行（SYSTEM, require_confirm）
+│   ├── write.py            # Phase 0: 檔案寫入（FILES, require_confirm）
+│   ├── read.py             # Phase 0: 檔案讀取（FILES）
+│   ├── search.py           # Phase 0: Tavily 網路搜尋（WEB）
+│   ├── memory_search.py    # Phase 2a: 長期記憶 CRUD + 搜尋
+│   ├── spawn_tool.py       # Phase 4: 子任務委派
+│   ├── spawn_child.py      # Phase 4: SpawnManager
+│   ├── ollama_provider.py  # Phase 2b: Ollama embedding + minicpm-v provider
+│   ├── categories.py       # Re-export shim → core.categories
+│   ├── policy.py           # Re-export shim → core.policy
+│   └── mcp/                # Phase 1a: MCP 整合
+│       ├── __init__.py
+│       ├── client.py       # MCPStdioClient + MCPSseClient
+│       ├── discovery.py    # 動態發現 MCP 工具
+│       └── registry.py     # MCPBridge → ToolRegistry 橋接
 ├── soul/
 │   ├── __init__.py
-│   ├── identity.py         # 系統提示組合、自我認知
-│   └── memory.py           # 對話歷史管理（JSON 檔案式）
+│   ├── identity.py         # 系統提示組合、自我認知 + LTM context
+│   └── memory/             # Phase 2a: 持久化記憶子系統
+│       ├── __init__.py
+│       ├── session_store.py    # SessionStore（遷移自原 soul/memory.py）
+│       ├── long_term.py        # LongTermMemory — JSON 持久化 CRUD
+│       ├── summarizer.py       # 規則式對話摘要壓縮
+│       ├── index.py            # MemoryIndex — 全文關鍵詞搜尋
+│       └── vector_index.py     # Phase 2b: VectorIndex — ollama 向量搜尋
+├── learning/               # Phase 3: 自我學習子系統
+│   ├── __init__.py
+│   ├── skill_store.py      # SkillStore — draft→active→deprecated 生命週期
+│   ├── skill_factory.py    # SkillFactory — 行為模式偵測 + draft 產生
+│   └── skill_refiner.py    # SkillRefiner — 使用成效追蹤 + 自動調整
 ├── transport/
 │   ├── __init__.py
 │   ├── terminal.py         # 簡易終端機 REPL
 │   ├── discord_bot.py      # Discord @提及和私訊處理
 │   └── telegram_bot.py     # Telegram 訊息處理
 ├── tests/
-│   ├── conftest.py         # Pytest 固定裝置（sys.path）
-│   └── test_smoke.py       # 結構性煙霧測試
+│   ├── conftest.py
+│   ├── test_smoke.py
+│   ├── test_phase0_policy.py
+│   ├── test_phase1_mcp.py
+│   ├── test_phase1b_2a.py
+│   ├── test_phase3_learning.py
+│   └── test_phase4_spawn.py
 ├── start.sh                # 一鍵啟動腳本
-└── main.py                 # 含優雅關機的進入點
+├── main.py                 # 含優雅關機的進入點（全 Phase 接線）
+└── ruff.toml               # Ruff linter 設定
 ```
 
 ---
