@@ -8,11 +8,10 @@ calls are made, and no API keys need to be present in the env.
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
-from unittest.mock import AsyncMock, Mock, patch
-
 from core.exceptions import ProviderError
 
 
@@ -123,11 +122,10 @@ class TestHttpProvider:
             provider._client,
             "post",
             new=AsyncMock(side_effect=httpx.TimeoutException("Connection timed out")),
-        ):
-            with pytest.raises(ProviderError) as exc:
-                await provider.chat_completion(
-                    messages=[{"role": "user", "content": "Hi"}],
-                )
+        ), pytest.raises(ProviderError) as exc:
+            await provider.chat_completion(
+                messages=[{"role": "user", "content": "Hi"}],
+            )
         assert "timed out" in str(exc.value).lower()
 
     @pytest.mark.asyncio
@@ -137,11 +135,10 @@ class TestHttpProvider:
             provider._client,
             "post",
             new=AsyncMock(side_effect=httpx.RequestError("Connection refused")),
-        ):
-            with pytest.raises(ProviderError) as exc:
-                await provider.chat_completion(
-                    messages=[{"role": "user", "content": "Hi"}],
-                )
+        ), pytest.raises(ProviderError) as exc:
+            await provider.chat_completion(
+                messages=[{"role": "user", "content": "Hi"}],
+            )
         assert "Connection refused" in str(exc.value)
 
     # -- malformed response -------------------------------------------

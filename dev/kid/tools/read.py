@@ -1,9 +1,8 @@
 import os
-from pathlib import Path
 
-from core.tool_decorator import tool
 from core.categories import ToolCategory
 from core.policy import ToolPolicy
+from core.tool_decorator import tool
 
 # Common binary file extensions / magic checks
 # We use a heuristic: read the first 8 KB and check for null bytes.
@@ -61,7 +60,7 @@ async def read_file(path: str) -> str:
 
     # Read as text
     try:
-        with open(resolved, "r", encoding="utf-8") as f:
+        with open(resolved, encoding="utf-8") as f:
             data = f.read()
         return data
     except UnicodeDecodeError:

@@ -4,21 +4,24 @@ from __future__ import annotations
 
 import functools
 import inspect
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from .categories import ToolCategory
 from .policy import ToolPolicy
 from .tool_spec import ToolSpec
 
+if TYPE_CHECKING:
+    from .tool_registry import ToolRegistry
 
 # ---------------------------------------------------------------------------
 # Module-level default registry  (lazy init)
 # ---------------------------------------------------------------------------
 
-_default_registry: Optional["ToolRegistry"] = None
+_default_registry: ToolRegistry | None = None
 
 
-def get_default_registry() -> "ToolRegistry":
+def get_default_registry() -> ToolRegistry:
     """Return the module-level default ToolRegistry, creating it lazily."""
     global _default_registry  # noqa: PLW0603
     if _default_registry is None:
@@ -33,14 +36,14 @@ def get_default_registry() -> "ToolRegistry":
 # ---------------------------------------------------------------------------
 
 def tool(
-    _func: Optional[Callable[..., Any]] = None,
+    _func: Callable[..., Any] | None = None,
     *,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
-    parameters: Optional[dict] = None,
-    category: Optional[ToolCategory] = None,
-    policy: Optional[ToolPolicy] = None,
-    registry: Optional["ToolRegistry"] = None,
+    name: str | None = None,
+    description: str | None = None,
+    parameters: dict | None = None,
+    category: ToolCategory | None = None,
+    policy: ToolPolicy | None = None,
+    registry: ToolRegistry | None = None,
 ) -> Any:
     """Mark an async function as a tool and register it.
 

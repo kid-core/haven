@@ -1,10 +1,9 @@
 import asyncio
 import shlex
-from pathlib import PureWindowsPath, PurePosixPath
 
-from core.tool_decorator import tool
 from core.categories import ToolCategory
 from core.policy import ToolPolicy
+from core.tool_decorator import tool
 
 DANGEROUS_COMMANDS = {"rm", "mv", "dd", "mkfs", "shutdown", "reboot", "sudo"}
 
@@ -31,7 +30,6 @@ def _translate_path(cmd: str) -> str:
             and cmd[i + 2] in ("\\", "/")
         ):
             drive = cmd[i].lower()
-            sep = cmd[i + 2]
             i += 3
 
             # Collect the rest of the path
@@ -122,7 +120,7 @@ async def execute_command(cmd: str) -> str:
         stdout, stderr = await asyncio.wait_for(
             proc.communicate(), timeout=30
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return "[error] Command timed out after 30 seconds."
     except FileNotFoundError:
         return f"[error] Command not found: {parts[0]}"

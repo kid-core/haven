@@ -20,7 +20,7 @@ async def _async_input(prompt: str = "") -> str:
     return await loop.run_in_executor(None, input, prompt)
 
 
-async def run_terminal(router: "Router") -> None:
+async def run_terminal(router: Router) -> None:
     """REPL: read input, call router.process(), print response."""
     session_id = "terminal"
     print("🏝️  Haven Terminal (type 'exit' to quit)")

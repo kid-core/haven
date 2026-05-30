@@ -1,9 +1,9 @@
 """Phase 1a tests — MCP client, config, discovery, bridging."""
 
 import pytest
-from tools.mcp.client import MCPError, MCPStdioClient, MCPSseClient
-from tools.mcp.registry import MCPServerConfig, MCPBridge
 from core.tool_registry import ToolRegistry
+from tools.mcp.client import MCPError, MCPSseClient, MCPStdioClient
+from tools.mcp.registry import MCPBridge, MCPServerConfig
 
 
 class TestMCPServerConfig:

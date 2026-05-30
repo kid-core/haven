@@ -4,10 +4,6 @@ Edge-case tests for SessionStore (JSON file-backed session persistence).
 
 from __future__ import annotations
 
-import json
-
-import pytest
-
 
 class TestSessionStoreEdgeCases:
     """SessionStore edge cases beyond basic save/load."""

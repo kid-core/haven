@@ -18,10 +18,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Module-level spawn manager — set by Router during init
-_spawn_manager: "SpawnManager | None" = None
+_spawn_manager: SpawnManager | None = None
 
 
-def set_spawn_manager(mgr: "SpawnManager") -> None:
+def set_spawn_manager(mgr: SpawnManager) -> None:
     """Inject the spawn manager (called by Router on init)."""
     global _spawn_manager
     _spawn_manager = mgr

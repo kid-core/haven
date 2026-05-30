@@ -9,6 +9,7 @@ from typing import Any
 from core.categories import ToolCategory
 from core.policy import ToolPolicy
 from core.tool_spec import ToolSpec
+
 from tools.mcp.client import MCPClient, MCPError
 
 logger = logging.getLogger(__name__)

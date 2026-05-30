@@ -5,16 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .base_provider import BaseProvider
 from .category_router import CategoryRouter, ExecutionMode
 from .tool_registry import PolicyBlockedError, ToolRegistry
 
 if TYPE_CHECKING:
-    from soul.memory import SessionStore, LongTermMemory
-    from learning.skill_factory import SkillFactory
     from learning.skill_store import SkillStore
+    from soul.memory import LongTermMemory, SessionStore
 
 # Regex that matches any lone surrogate character (U+D800–U+DFFF)
 _SURROGATE_RE = re.compile(r"[" + "".join(chr(c) for c in range(0xD800, 0xE000)) + "]")
@@ -224,7 +223,7 @@ class Router:
                 ),
                 timeout=timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Tool %r timed out after %ss", name, timeout)
             result_msg = {
                 "role": "tool",

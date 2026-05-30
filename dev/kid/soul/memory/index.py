@@ -25,7 +25,7 @@ class MemoryIndex:
         results = index.query("Python preference", limit=5)
     """
 
-    def __init__(self, memory: "LongTermMemory") -> None:
+    def __init__(self, memory: LongTermMemory) -> None:
         self._memory = memory
 
     def query(
@@ -33,7 +33,7 @@ class MemoryIndex:
         query: str,
         limit: int = 10,
         type_filter: str | None = None,
-    ) -> list["MemoryEntry"]:
+    ) -> list[MemoryEntry]:
         """Search with multi-keyword relevance scoring.
 
         Split *query* into words, score each entry by how many
@@ -44,7 +44,7 @@ class MemoryIndex:
         if not keywords:
             return self._memory.get_recent(limit)
 
-        scored: list[tuple[int, "MemoryEntry"]] = []
+        scored: list[tuple[int, MemoryEntry]] = []
 
         for entry in self._memory.all():
             if type_filter and entry.type != type_filter:

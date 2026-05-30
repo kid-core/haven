@@ -4,9 +4,9 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from learning.skill_store import SkillStore, SkillState, StoredSkill
 from learning.skill_factory import SkillFactory, inject_active_skills
 from learning.skill_refiner import SkillRefiner
+from learning.skill_store import SkillState, SkillStore, StoredSkill
 
 
 class TestSkillStore:

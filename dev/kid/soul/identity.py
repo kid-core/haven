@@ -13,14 +13,14 @@ def _load_identity() -> str:
     """Load the core identity from the shared identity file."""
     identity_path = "/mnt/z/Core/identity.md"
     if os.path.exists(identity_path):
-        with open(identity_path, "r") as f:
+        with open(identity_path) as f:
             return f.read().strip()
     return "You are Haven, a helpful AI assistant."
 
 
 def build_system_prompt(
     session_id: str = "default",
-    long_term_memory: "LongTermMemory | None" = None,
+    long_term_memory: LongTermMemory | None = None,
 ) -> str:
     """Assemble a system prompt from identity, tool rules, and memory context.
 

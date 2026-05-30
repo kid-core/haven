@@ -123,9 +123,9 @@ def summarize_session(
     summary.key_topics = _extract_topics(combined)
 
     # Tags from topics
-    summary.tags = sorted(set(
+    summary.tags = sorted({
         TOPIC_KEYWORDS.get(t.lower(), "general") for t in summary.key_topics
-    ))
+    })
 
     return summary
 

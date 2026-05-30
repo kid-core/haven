@@ -7,10 +7,7 @@ operations; uses tmp_path with HAVEN_ALLOWED_PREFIX for CI compatibility.
 
 from __future__ import annotations
 
-import os
-
 import pytest
-
 
 # ======================================================================
 # CMD tool
@@ -23,7 +20,7 @@ class TestCmdSafety:
 
     def _import_functions(self):
         """Import private functions from tools/cmd for isolated testing."""
-        from tools.cmd import _is_safe, _translate_path, DANGEROUS_COMMANDS, SHELL_METACHARS
+        from tools.cmd import DANGEROUS_COMMANDS, SHELL_METACHARS, _is_safe, _translate_path
         self._is_safe = _is_safe
         self._translate_path = _translate_path
         self.DANGEROUS_COMMANDS = DANGEROUS_COMMANDS
@@ -218,8 +215,8 @@ class TestWriteTool:
 
     @pytest.mark.asyncio
     async def test_writes_and_overwrites(self, work_dir):
-        from tools.write import write_file
         from tools.read import read_file
+        from tools.write import write_file
 
         path = work_dir / "rw.txt"
 

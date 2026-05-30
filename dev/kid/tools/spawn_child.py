@@ -9,8 +9,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from core.router import Router
@@ -44,7 +44,7 @@ class SpawnManager:
         result = await mgr.spawn("Summarize the following text: ...", timeout=60)
     """
 
-    def __init__(self, router: "Router", parent_id: str = "main", nesting_level: int = 0) -> None:
+    def __init__(self, router: Router, parent_id: str = "main", nesting_level: int = 0) -> None:
         self._router = router
         self._parent_id = parent_id
         self._nesting = nesting_level
@@ -92,7 +92,7 @@ class SpawnManager:
             child.status = "done"
             return result[:MAX_RESULT_CHARS]
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             child.status = "timeout"
             return f"[spawn error] Child task {task_id} timed out after {timeout}s."
         except Exception as exc:

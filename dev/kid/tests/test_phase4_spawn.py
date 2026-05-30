@@ -3,12 +3,12 @@
 import asyncio
 
 import pytest
-from core.tool_registry import ToolRegistry
-from core.tool_spec import ToolSpec
 from core.categories import ToolCategory
 from core.policy import ToolPolicy
 from core.router import Router
-from tools.spawn_child import SpawnManager, MAX_NESTING
+from core.tool_registry import ToolRegistry
+from core.tool_spec import ToolSpec
+from tools.spawn_child import MAX_NESTING, SpawnManager
 
 
 async def _echo(**kw):
@@ -38,7 +38,6 @@ class TestSpawnManager:
     @pytest.mark.asyncio
     async def test_basic_spawn(self):
         reg = _make_registry()
-        import tools
         router = Router(reg, [(EchoProvider(), None)])
         mgr = SpawnManager(router=router)
         result = await mgr.spawn("Hello world", timeout=5)
@@ -47,7 +46,6 @@ class TestSpawnManager:
     @pytest.mark.asyncio
     async def test_nesting_limit(self):
         reg = _make_registry()
-        import tools
         router = Router(reg, [(EchoProvider(), None)])
         mgr = SpawnManager(router=router, nesting_level=MAX_NESTING)
         result = await mgr.spawn("test", timeout=5)
@@ -67,7 +65,6 @@ class TestSpawnManager:
             async def close(self):
                 pass
 
-        import tools
         router = Router(reg, [(SlowProvider(), None)])
         mgr = SpawnManager(router=router)
         result = await mgr.spawn("test", timeout=0.5)

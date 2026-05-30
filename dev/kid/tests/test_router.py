@@ -9,9 +9,7 @@ without an actual LLM.
 from __future__ import annotations
 
 import pytest
-
 from core.models import ProviderResponse
-
 
 # ======================================================================
 # Mock providers — duck-typed, no inheritance needed
@@ -110,7 +108,7 @@ class TestRouter:
     @pytest.mark.asyncio
     async def test_max_turns_limit(self, registry):
         """Provider keeps returning tool_calls → should hit max_turns."""
-        from core.router import Router, TURN_LIMIT_MESSAGE
+        from core.router import TURN_LIMIT_MESSAGE, Router
 
         tool_call_response = ProviderResponse(
             content=None,

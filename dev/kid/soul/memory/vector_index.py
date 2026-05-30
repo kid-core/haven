@@ -39,10 +39,9 @@ class VectorIndex:
 
     def __init__(
         self,
-        memory: "LongTermMemory",
-        keyword_index: "MemoryIndex | None" = None,
+        memory: LongTermMemory,
+        keyword_index: MemoryIndex | None = None,
     ) -> None:
-        from soul.memory.long_term import LongTermMemory
 
         self._memory: LongTermMemory = memory
         self._keyword = keyword_index
@@ -63,7 +62,7 @@ class VectorIndex:
         query: str,
         limit: int = 10,
         type_filter: str | None = None,
-    ) -> list["MemoryEntry"]:
+    ) -> list[MemoryEntry]:
         """Hybrid search: semantic (cosine) + keyword, merged and ranked.
 
         Falls back to keyword-only if ollama isn't available.
@@ -76,7 +75,7 @@ class VectorIndex:
             return self._keyword.query(query, limit, type_filter)
         return self._memory.search(query, limit, type_filter)
 
-    async def index_entry(self, entry: "MemoryEntry") -> None:
+    async def index_entry(self, entry: MemoryEntry) -> None:
         """Compute and cache embedding for a single entry."""
         if not await self._is_available():
             return
@@ -149,7 +148,7 @@ class VectorIndex:
 
     async def _hybrid_search(
         self, query: str, limit: int, type_filter: str | None,
-    ) -> list["MemoryEntry"]:
+    ) -> list[MemoryEntry]:
         """Combine semantic + keyword results."""
         # Get query embedding
         query_emb = await self._embed(query)
@@ -161,7 +160,7 @@ class VectorIndex:
         if type_filter:
             candidates = [e for e in candidates if e.type == type_filter]
 
-        scored: list[tuple[float, "MemoryEntry"]] = []
+        scored: list[tuple[float, MemoryEntry]] = []
         for entry in candidates:
             entry_emb = self._embeddings.get(entry.id)
             if entry_emb is None:
@@ -196,7 +195,7 @@ class VectorIndex:
         """Cosine similarity between two vectors."""
         if len(a) != len(b) or not a or not b:
             return 0.0
-        dot = sum(x * y for x, y in zip(a, b))
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         mag_a = math.sqrt(sum(x * x for x in a))
         mag_b = math.sqrt(sum(y * y for y in b))
         if mag_a == 0 or mag_b == 0:
@@ -208,21 +207,18 @@ class VectorIndex:
     # ------------------------------------------------------------------
 
     @property
-    def _cache_path(self) -> "Path":
-        import pathlib
+    def _cache_path(self) -> Path:
         from soul.memory.long_term import DEFAULT_MEMORY_DIR
         return DEFAULT_MEMORY_DIR / "embeddings.json"
 
     def _load_embeddings(self) -> None:
+        import contextlib
         import json
-        import pathlib
         path = self._cache_path
         if not path.exists():
             return
-        try:
+        with contextlib.suppress(json.JSONDecodeError, OSError):
             self._embeddings = json.loads(path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
 
     def _save_embeddings(self) -> None:
         import json
@@ -233,6 +229,7 @@ class VectorIndex:
 # Re-export compatible type hints for TYPE_CHECKING
 # ---------------------------------------------------------------------------
 if TYPE_CHECKING:
-    from soul.memory.long_term import LongTermMemory  # noqa: F811
-    from soul.memory.index import MemoryIndex  # noqa: F811
     from pathlib import Path  # noqa: F811
+
+    from soul.memory.index import MemoryIndex  # noqa: F811
+    from soul.memory.long_term import LongTermMemory  # noqa: F811

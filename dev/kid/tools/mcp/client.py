@@ -147,7 +147,7 @@ class MCPStdioClient(MCPClient):
             try:
                 self._proc.terminate()
                 await asyncio.wait_for(self._proc.wait(), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._proc.kill()
                 await self._proc.wait()
             except ProcessLookupError:

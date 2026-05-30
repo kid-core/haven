@@ -3,10 +3,9 @@
 import tempfile
 from pathlib import Path
 
-import pytest
 from core.categories import ToolCategory
-from core.category_router import CategoryRouter, CategoryRule, ExecutionMode, DEFAULT_RULES
-from soul.memory import LongTermMemory, summarize_session, MemoryIndex
+from core.category_router import DEFAULT_RULES, CategoryRouter, CategoryRule, ExecutionMode
+from soul.memory import LongTermMemory, MemoryIndex, summarize_session
 
 
 class TestCategoryRouter:

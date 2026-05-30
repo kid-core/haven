@@ -58,6 +58,7 @@ class TestToolRegistry:
     @pytest.mark.asyncio
     async def test_registry_execute_unknown(self) -> None:
         import json
+
         import tools  # noqa: F401
         from core.tool_decorator import get_default_registry
 
@@ -113,7 +114,7 @@ class TestExceptions:
     """Verify domain exceptions hierarchy."""
 
     def test_core_exceptions(self) -> None:
-        from core.exceptions import HavenError, ProviderError, RouterError, RegistryError
+        from core.exceptions import HavenError, ProviderError, RegistryError, RouterError
 
         assert issubclass(ProviderError, HavenError)
         assert issubclass(RouterError, HavenError)

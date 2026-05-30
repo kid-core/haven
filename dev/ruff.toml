@@ -22,8 +22,8 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-"kid/tests/*.py" = ["N802", "N803", "S101"]
-"kid/tools/mcp/*.py" = ["SIM117"]  # nested with is fine for async ctx mgr
+"kid/tests/*.py" = ["N802", "N803", "S101", "N806", "F811", "SIM117"]
+"kid/tools/mcp/*.py" = ["SIM117", "SIM105"]  # nested with + suppress are fine for async ctx mgr
 
 [format]
 quote-style = "double"

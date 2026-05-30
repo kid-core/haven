@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
-from .policy import RateLimitTracker
 from .models import ToolResult
+from .policy import RateLimitTracker
 from .tool_spec import ToolSpec
 
 

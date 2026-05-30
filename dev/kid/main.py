@@ -8,24 +8,25 @@ Entry point that wires up tools, providers, and all transports
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import signal
-from typing import Any
+
 from dotenv import load_dotenv
 
 load_dotenv("/mnt/z/Core/.env")
 load_dotenv("/root/.openclaw/env")
 
-from core.tool_decorator import get_default_registry
-from core.http_provider import HttpProvider
-from core.category_router import CategoryRouter
-from core.router import Router
-from soul.identity import build_system_prompt
-from soul.memory import SessionStore, LongTermMemory
-from learning.skill_store import SkillStore
-import tools  # noqa: F401 — triggers @tool registration
-from transport import run_terminal, run_discord, run_telegram
+import tools  # noqa: E402, F401 — triggers @tool registration (needs .env loaded first)
+from core.category_router import CategoryRouter  # noqa: E402
+from core.http_provider import HttpProvider  # noqa: E402
+from core.router import Router  # noqa: E402
+from core.tool_decorator import get_default_registry  # noqa: E402
+from learning.skill_store import SkillStore  # noqa: E402
+from soul.identity import build_system_prompt  # noqa: E402
+from soul.memory import LongTermMemory, SessionStore  # noqa: E402
+from transport import run_discord, run_telegram, run_terminal  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +53,9 @@ async def main() -> None:
     # Register signal handlers
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, _handle_signal)
-        except NotImplementedError:
+        with contextlib.suppress(NotImplementedError):
             # Windows / some environments don't support add_signal_handler
-            pass
+            loop.add_signal_handler(sig, _handle_signal)
 
     # ── Core ────────────────────────────────────────────────────────
     registry = get_default_registry()

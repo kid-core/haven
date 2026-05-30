@@ -1,9 +1,8 @@
 import os
-from pathlib import Path
 
-from core.tool_decorator import tool
 from core.categories import ToolCategory
 from core.policy import ToolPolicy
+from core.tool_decorator import tool
 
 
 def _allowed_prefix() -> str:
@@ -21,9 +20,7 @@ def _is_protected(path: str) -> bool:
     if basename in PROTECTED_NAMES:
         return True
     _, ext = os.path.splitext(basename)
-    if ext in PROTECTED_EXTENSIONS:
-        return True
-    return False
+    return ext in PROTECTED_EXTENSIONS
 
 
 @tool(

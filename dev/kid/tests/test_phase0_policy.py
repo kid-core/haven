@@ -2,9 +2,9 @@
 
 import pytest
 from core.categories import ToolCategory
-from core.policy import ToolPolicy, RateLimitTracker, SAFE_PROFILE, CODING_PROFILE
+from core.policy import CODING_PROFILE, SAFE_PROFILE, RateLimitTracker, ToolPolicy
+from core.tool_registry import PolicyBlockedError, ToolRegistry
 from core.tool_spec import ToolSpec
-from core.tool_registry import ToolRegistry, PolicyBlockedError
 
 
 class TestToolCategory:

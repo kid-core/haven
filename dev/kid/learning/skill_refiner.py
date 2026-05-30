@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from learning.skill_store import SkillStore, StoredSkill
+    from learning.skill_store import SkillStore
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class SkillRefiner:
     - All changes are logged to the skill's audit trail
     """
 
-    store: "SkillStore"
+    store: SkillStore
 
     def evaluate(self) -> list[str]:
         """Evaluate all Active skills and return warnings.

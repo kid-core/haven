@@ -6,7 +6,8 @@ import logging
 from typing import Any
 
 from core.tool_registry import ToolRegistry
-from tools.mcp.client import MCPClient, MCPStdioClient, MCPSseClient
+
+from tools.mcp.client import MCPClient, MCPSseClient, MCPStdioClient
 from tools.mcp.discovery import discover_tools
 
 logger = logging.getLogger(__name__)

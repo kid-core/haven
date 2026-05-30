@@ -23,10 +23,10 @@ class ExecutionMode(Enum):
     """How a tool category should be executed."""
 
     INLINE = auto()
-    """Call the tool handler directly.  Used for FILES, SYSTEM, MEMORY, WEB, etc."""
+    """Call the tool handler directly. Used for FILES, SYSTEM, MEMORY, WEB, etc."""
 
     AI_PROXY = auto()
-    """Execution is proxied through an AI provider.  
+    """Execution is proxied through an AI provider.
     The tool handler receives provider context for sub-LLM calls.
     Used for AI-category tools that need model access (image gen, etc)."""
 
@@ -117,7 +117,7 @@ class CategoryRouter:
 
     def __init__(self) -> None:
         self._rules: dict[ToolCategory, CategoryRule] = dict(DEFAULT_RULES)
-        self._providers: dict[str, "BaseProvider"] = {}
+        self._providers: dict[str, BaseProvider] = {}
 
     # ------------------------------------------------------------------
     # Rule management
@@ -135,13 +135,13 @@ class CategoryRouter:
     # Provider management
     # ------------------------------------------------------------------
 
-    def set_provider(self, role: str, provider: "BaseProvider") -> None:
+    def set_provider(self, role: str, provider: BaseProvider) -> None:
         """Register a provider for a named role (e.g. "default", "vision")."""
         self._providers[role] = provider
         logger.info("CategoryRouter: provider %r registered for role %r",
                     type(provider).__name__, role)
 
-    def get_provider(self, role: str | None) -> "BaseProvider | None":
+    def get_provider(self, role: str | None) -> BaseProvider | None:
         """Retrieve a provider by role name, or None."""
         if role is None:
             return None
@@ -161,7 +161,7 @@ class CategoryRouter:
         """Whether this category needs an AI provider for execution."""
         return self.get_rule(category).mode == ExecutionMode.AI_PROXY
 
-    def get_provider_for(self, category: ToolCategory) -> "BaseProvider | None":
+    def get_provider_for(self, category: ToolCategory) -> BaseProvider | None:
         """Get the provider to use for AI_PROXY categories."""
         rule = self.get_rule(category)
         if rule.mode != ExecutionMode.AI_PROXY:

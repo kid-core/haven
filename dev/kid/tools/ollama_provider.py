@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.http_provider import HttpProvider
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +81,7 @@ class OllamaEmbedding:
 def create_ollama_provider(
     model: str = "minicpm-v:latest",
     name: str = "Ollama-minicpm",
-) -> "HttpProvider | None":
+) -> HttpProvider | None:
     """Create an HttpProvider for ollama's OpenAI-compatible endpoint.
 
     Returns None if ollama isn't configured or available.

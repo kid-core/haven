@@ -24,7 +24,7 @@ class ToolCategory(Enum):
     MEMORY = auto()         # memory operations
     EXTERNAL = auto()       # MCP tools, third-party integrations
 
-    def default_policy(self) -> "ToolPolicy":
+    def default_policy(self) -> ToolPolicy:
         """Return the recommended ToolPolicy for this category.
 
         Used as a sensible default when registering new tools.

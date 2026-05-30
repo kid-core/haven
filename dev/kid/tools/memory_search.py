@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from core.categories import ToolCategory
 from core.policy import ToolPolicy
 from core.tool_decorator import tool
