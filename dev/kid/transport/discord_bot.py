@@ -56,6 +56,20 @@ class DiscordHandle:
         await channel.send(text)
         return True
 
+    async def notify_user(self, user_id: int, text: str) -> bool:
+        """Send a direct message to a Discord user. Returns True on success."""
+        if self._bot is None:
+            logger.warning("Discord DM notification skipped: bot not ready")
+            return False
+        user = self._bot.get_user(user_id)
+        if user is None:
+            logger.warning(
+                "Discord DM notification skipped: user %s not found", user_id
+            )
+            return False
+        await user.send(text)
+        return True
+
 
 class DiscordBot(discord.Client):
     """Discord client that forwards messages to a Haven Router."""

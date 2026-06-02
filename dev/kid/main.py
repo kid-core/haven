@@ -15,11 +15,15 @@ import signal
 
 from dotenv import load_dotenv
 
-load_dotenv("/mnt/z/Core/.env")
-load_dotenv("/root/.openclaw/env")
+from core.paths import core_env, haven_env, openclaw_env
+
+load_dotenv(str(core_env()))
+load_dotenv(str(haven_env()), override=True)
+load_dotenv(str(openclaw_env()))
 
 import tools  # noqa: E402, F401 — triggers @tool registration (needs .env loaded first)
 from core.category_router import CategoryRouter  # noqa: E402
+from core.heartbeat import HeartbeatMonitor  # noqa: E402
 from core.http_provider import HttpProvider  # noqa: E402
 from core.router import Router  # noqa: E402
 from core.tool_decorator import get_default_registry  # noqa: E402
@@ -92,9 +96,8 @@ async def main() -> None:
             model="minicpm-v:latest", name="Ollama-minicpm-v",
         )
         if ollama_minicpm is not None:
-            providers.append((ollama_minicpm, None))
             cat_router.set_provider("vision", ollama_minicpm)
-            logger.info("Ollama minicpm-v provider ready")
+            logger.info("Ollama minicpm-v provider ready (vision only)")
     except Exception as exc:
         logger.debug("Ollama provider skipped: %s", exc)
 
@@ -135,16 +138,39 @@ async def main() -> None:
     # ── Transports ──────────────────────────────────────────────────
     tasks: list[asyncio.Task] = []
 
-    # Terminal (runs in executor to avoid blocking the event loop)
-    tasks.append(asyncio.create_task(run_terminal(router)))
+    # Terminal (only when stdin is interactive)
+    if not os.getenv("HAVEN_NO_TERMINAL"):
+        tasks.append(asyncio.create_task(run_terminal(router)))
+    else:
+        logger.info("Terminal skipped (background mode)")
 
-    # Discord (background task)
-    discord_task = run_discord(router)
-    if discord_task is not None:
-        tasks.append(discord_task)
+    # Discord (background task) — returns handle for notifications
+    discord = run_discord(router)
+    tasks.append(discord.task)
 
-    # Telegram (background) — save reference for shutdown
-    telegram_app = run_telegram(router)
+    # Telegram (background) — returns handle for notifications + shutdown
+    telegram = run_telegram(router)
+
+    # ── Heartbeat Monitor ──────────────────────────────────────────
+    heartbeat = HeartbeatMonitor(
+        interval=float(os.getenv("HAVEN_HEARTBEAT_INTERVAL", "30")),
+        threshold=int(os.getenv("HAVEN_HEARTBEAT_THRESHOLD", "3")),
+    )
+    notify_discord_ch = int(os.getenv("HAVEN_HEARTBEAT_DISCORD_CHANNEL", "0"))
+    notify_discord_user = int(os.getenv("HAVEN_HEARTBEAT_DISCORD_USER", "0"))
+    notify_telegram_chat = int(os.getenv("HAVEN_HEARTBEAT_TELEGRAM_CHAT", "0"))
+
+    async def _heartbeat_notify(is_down: bool, message: str) -> None:
+        """Notify via Haven's own channels using transport handles."""
+        if notify_discord_user:
+            await discord.notify_user(notify_discord_user, message)
+        elif notify_discord_ch:
+            await discord.notify(notify_discord_ch, message)
+        if notify_telegram_chat:
+            await telegram.notify(notify_telegram_chat, message)
+
+    heartbeat.on_status_change(_heartbeat_notify)
+    tasks.append(asyncio.create_task(heartbeat.start()))
 
     # ── Wait for shutdown signal or task failure ────────────────────
     wait_tasks = [
@@ -158,16 +184,8 @@ async def main() -> None:
         t.cancel()
 
     # ── Graceful shutdown ───────────────────────────────────────────
-    # Stop Telegram app (stop updater first, then app, then shutdown)
-    if telegram_app is not None:
-        try:
-            if telegram_app.updater and telegram_app.updater.running:
-                await telegram_app.updater.stop()
-            await telegram_app.stop()
-            await telegram_app.shutdown()
-            logger.info("Telegram stopped.")
-        except Exception as exc:
-            logger.warning("Telegram shutdown error: %s", exc)
+    # Stop Telegram app via handle
+    await telegram.shutdown()
 
     # Cancel transport tasks
     for t in tasks:
@@ -179,15 +197,31 @@ async def main() -> None:
     # Close providers
     await deepseek.close()
     await openrouter.close()
+    await heartbeat.close()
 
     print("\n🛑 Haven shut down gracefully.")
 
 
 if __name__ == "__main__":
+    # ── Logging: file + console ──
+    from core.paths import log_file as _log_file
+    LOG_FILE = str(_log_file())
+    handlers: list = [logging.FileHandler(LOG_FILE, mode="w")]
+    if not os.getenv("HAVEN_NO_TERMINAL"):
+        handlers.insert(0, logging.StreamHandler())
     logging.basicConfig(
         level=logging.INFO,
         format="%(message)s",
+        handlers=handlers,
     )
+    # Structured format for file handler (always last in handlers list)
+    file_handler = handlers[-1]
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)-5s] %(name)s: %(message)s",
+                          datefmt="%H:%M:%S")
+    )
+    file_handler.setLevel(logging.INFO)
+
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("telegram").setLevel(logging.WARNING)
     logging.getLogger("discord").setLevel(logging.WARNING)
