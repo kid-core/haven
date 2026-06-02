@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-from core.paths import core_env, haven_env, openclaw_env
+from core.paths import core_env, haven_env, openclaw_env  # noqa: E402
 
 load_dotenv(str(core_env()))
 load_dotenv(str(haven_env()), override=True)
@@ -74,12 +74,12 @@ class DiscordBot(discord.Client):
             return
 
         # The @Haven role ID (integration-managed, bot can't actually "have" this role)
-        HAVEN_ROLE_ID = 1510890634989408269
+        haven_role_id = 1510890634989408269
 
         # Only respond to @mentions, role pings, or DMs
         if not (
             self.user and self.user.mentioned_in(message)
-            or HAVEN_ROLE_ID in message.raw_role_mentions
+            or haven_role_id in message.raw_role_mentions
             or isinstance(message.channel, discord.DMChannel)
         ):
             return
