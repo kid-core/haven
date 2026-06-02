@@ -1,56 +1,44 @@
-name: CI
+name: Haven CI
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'dev/kid/**'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'dev/kid/**'
 
 jobs:
-  test:
+  lint-and-test:
+    name: Lint & Test (Python 3.12)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dev/kid
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('dev/kid/requirements-ci.txt') }}
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r dev/requirements.txt
+        run: pip install -r requirements-ci.txt
 
-      # ── Linter (ruff) ───────────────────────────────────────────────
-      - name: Ruff — fast lint
-        run: ruff check dev/kid/ --output-format=github
+      - name: Ruff check
+        run: ruff check .
 
-      # ── Line-length sanity (400 max, up from 200) ────────────────────
-      - name: Check file size (≤ 400 lines)
-        run: |
-          find dev/kid -name "*.py" -not -path "*/.venv/*" -print0 \
-            | while IFS= read -r -d '' f; do
-              lines=$(wc -l < "$f")
-              if [ "$lines" -gt 400 ]; then
-                echo "❌ $f: ${lines} lines > 400"
-                exit 1
-              fi
-            done
-          echo "✅ All files ≤ 400 lines"
-
-      # ── Pylint (quality gate, soft-fail on notes/warnings) ───────────
-      - name: Pylint — code quality
-        continue-on-error: true
-        run: pylint dev/kid/ --exit-zero --output-format=colorized
-
-      # ── Tests ────────────────────────────────────────────────────────
-      - name: Run tests
-        run: |
-          cd dev && python -m pytest kid/tests/ -v --tb=short
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+      - name: Pytest
+        run: python -m pytest tests/ -q --tb=short

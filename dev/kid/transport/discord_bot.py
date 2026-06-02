@@ -13,6 +13,7 @@ import asyncio
 import logging
 import os
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import discord
@@ -23,8 +24,37 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-load_dotenv("/mnt/z/Core/.env")
-load_dotenv("/root/.openclaw/env")
+from core.paths import core_env, haven_env, openclaw_env
+
+load_dotenv(str(core_env()))
+load_dotenv(str(haven_env()), override=True)
+load_dotenv(str(openclaw_env()))
+
+
+@dataclass
+class DiscordHandle:
+    """Lightweight handle to the Discord bot for notification purposes.
+
+    Keeps the bot reference private — external code calls ``notify()``
+    without touching discord.py internals.
+    """
+
+    task: asyncio.Task
+    _bot: DiscordBot | None = None
+
+    async def notify(self, channel_id: int, text: str) -> bool:
+        """Send a message to a Discord channel. Returns True on success."""
+        if self._bot is None:
+            logger.warning("Discord notification skipped: bot not ready")
+            return False
+        channel = self._bot.get_channel(channel_id)
+        if channel is None:
+            logger.warning(
+                "Discord notification skipped: channel %s not found", channel_id
+            )
+            return False
+        await channel.send(text)
+        return True
 
 
 class DiscordBot(discord.Client):
@@ -43,15 +73,19 @@ class DiscordBot(discord.Client):
         if message.author == self.user:
             return
 
-        # Only respond to @mentions or DMs
+        # The @Haven role ID (integration-managed, bot can't actually "have" this role)
+        HAVEN_ROLE_ID = 1510890634989408269
+
+        # Only respond to @mentions, role pings, or DMs
         if not (
             self.user and self.user.mentioned_in(message)
+            or HAVEN_ROLE_ID in message.raw_role_mentions
             or isinstance(message.channel, discord.DMChannel)
         ):
             return
 
-        # Strip @mention from content
-        clean = re.sub(r"<@!\d+>|<@\d+>", "", message.content).strip()
+        # Strip @mentions and role pings from content
+        clean = re.sub(r"<@!\d+>|<@\d+>|<@&\d+>", "", message.content).strip()
         if not clean:
             return
 
@@ -66,22 +100,23 @@ class DiscordBot(discord.Client):
         await message.reply(reply)
 
 
-def run_discord(router: Router) -> asyncio.Task:
-    """Start the Discord bot as a background asyncio task.
+def run_discord(router: Router) -> DiscordHandle:
+    """Start the Discord bot and return a handle for notifications.
 
-    Returns the task so the caller can await or cancel it.
+    Returns a handle whose ``notify()`` method can send messages
+    once the bot has connected.
     """
-    token = os.getenv("DISCORD_TOKEN")
+    token = os.getenv("HAVEN_DISCORD_TOKEN") or os.getenv("DISCORD_TOKEN")
     if not token:
-        logger.warning("DISCORD_TOKEN not set — Discord will not start")
-        # Return a no-op completed task
+        logger.warning("HAVEN_DISCORD_TOKEN not set — Discord will not start")
         fut: asyncio.Future = asyncio.get_event_loop().create_future()
         fut.set_result(None)
-        return fut
+        return DiscordHandle(task=fut, _bot=None)
 
     intents = discord.Intents.default()
     intents.message_content = True
+    intents.guild_messages = True
     bot = DiscordBot(router, intents)
 
     task = asyncio.get_event_loop().create_task(bot.start(token))
-    return task
+    return DiscordHandle(task=task, _bot=bot)

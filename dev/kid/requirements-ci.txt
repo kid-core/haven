@@ -1,0 +1,9 @@
+# Haven CI requirements
+httpx>=0.28
+pydantic>=2.0
+python-dotenv>=1.0
+pytest>=9.0
+pytest-asyncio>=1.0
+ruff>=0.15
+discord.py>=2.7
+python-telegram-bot>=22.0
