@@ -13,9 +13,8 @@ import logging
 import os
 import signal
 
-from dotenv import load_dotenv
-
 from core.paths import core_env, haven_env, openclaw_env
+from dotenv import load_dotenv
 
 load_dotenv(str(core_env()))
 load_dotenv(str(haven_env()), override=True)

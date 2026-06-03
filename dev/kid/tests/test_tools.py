@@ -78,13 +78,13 @@ class TestCmdSafety:
     # -- execute_command integration -----------------------------------
 
     @pytest.mark.asyncio
-    async def test_rejects_empty_command(self):
+    async def test_execute_rejects_empty_command(self):
         from tools.cmd import execute_command
         result = await execute_command("")
         assert "[blocked]" in result
 
     @pytest.mark.asyncio
-    async def test_rejects_dangerous_command(self):
+    async def test_execute_rejects_dangerous_command(self):
         from tools.cmd import execute_command
         result = await execute_command("rm -rf /")
         assert "[blocked]" in result
