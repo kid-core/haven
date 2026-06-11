@@ -30,7 +30,7 @@ def set_spawn_manager(mgr: SpawnManager) -> None:
 
 @tool(
     category=ToolCategory.COLLAB,
-    policy=ToolPolicy(timeout=300.0, rate_limit=30.0, require_confirm=True),
+    policy=ToolPolicy(timeout=300.0, rate_limit=30.0),
 )
 @resource_gate(auto_estimate=True)
 async def spawn_child(
@@ -38,38 +38,33 @@ async def spawn_child(
     timeout: float = 300.0,
     max_turns: int = 10,
 ) -> str:
-    """Delegate a GENUINELY COMPLEX sub-task to an isolated child session.
+    """Delegate a complex sub-task to an isolated child session.
 
-    ⚠️  ONLY use this when you need 3+ distinct tool calls AND reasoning
-    between them.  For single operations (read, write, search, list, move),
-    use the dedicated tool directly — do NOT spawn a child.
+    Use when the task requires MULTIPLE tool calls with reasoning BETWEEN
+    them.  For single operations, use the dedicated tool directly.
 
-    Valid: multi-step research, code refactoring, batch file processing.
-    INVALID: reading one file, searching one query, running one command.
+    Good: multi-step research, code refactoring, batch file processing.
+    Bad:  reading one file, searching one query, one command.
 
     Args:
-        task:       The complex task for the child session.
+        task:       The task for the child session (describe fully).
         timeout:    Max seconds to wait (default 5 min, max 3600).
-        max_turns:  Max ReAct iterations for the child (default 10).
+        max_turns:  Max ReAct iterations (default 10).
 
     Returns:
         The child's final response, or an error message.
     """
     if _spawn_manager is None:
-        return "[spawn error] Sub-task delegation not configured. SpawnManager not wired."
+        return "[spawn error] Sub-task delegation not configured."
 
-    # ── Anti-trivial gate: reject obviously single-step tasks ─────
-    task_lower = task.lower().strip()
-    trivial_patterns = [
-        ("read", "Use `read_file` directly instead of spawning a child."),
-        ("ls ", "Use `execute_command ls` directly."),
-        ("list files", "Use `execute_command ls` directly."),
-        ("cat ", "Use `read_file` directly."),
-        ("search for", "Use `web_search` directly."),
-    ]
-    for trigger, advice in trivial_patterns:
-        if task_lower.startswith(trigger):
-            return f"[spawn rejected] This looks like a single-step task. {advice}"
+    # ── Soft anti-trivial gate: reject only obvious single-step words ──
+    task_first = task.lower().strip().split()[0] if task.strip() else ""
+    single_step_verbs = {"read", "ls", "cat", "list", "show", "display", "search", "find", "grep", "echo"}
+    if task_first in single_step_verbs and len(task.split()) <= 6:
+        return (
+            f"[spawn skipped] This looks like a single operation ('{task_first}'). "
+            f"Use the `{task_first}` tool directly instead of spawning a child."
+        )
 
     if max_turns == 10:  # default → auto-estimate
         from core.task_complexity import TaskComplexityEstimator
