@@ -91,6 +91,11 @@ class HavenConfig:
             int(c.strip()) for c in os.getenv("HAVEN_LISTEN_CHANNELS", "").split(",") if c.strip()
         ],
     )
+    listen_guilds: list[int] = field(
+        default_factory=lambda: [
+            int(c.strip()) for c in os.getenv("HAVEN_LISTEN_GUILDS", "").split(",") if c.strip()
+        ],
+    )
 
     # ── Visibility ───────────────────────────────────────────
     show_tool_calls: bool = field(

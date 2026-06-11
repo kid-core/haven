@@ -42,7 +42,7 @@ class DiscordAdapter(TransportAdapter):
         super().__init__(router, allowed_user_ids, transport_name="Discord", command_handler=command_handler)
         self._bot = bot
 
-    # ── Primitives ─────────────────────────────────────────────
+    # ── Primitives ──────────────────────────────────────────────────────
 
     async def _send_text(self, channel_id: str, text: str) -> bool:
         if self._bot is None:
@@ -125,21 +125,46 @@ class DiscordBot(discord.Client):
 
     async def on_ready(self) -> None:
         logger.info("Discord connected as %s", self.user)
+        print(f"✅ Discord connected as {self.user}", flush=True)
+        print(f"📋 listen_channels: {config.listen_channels}", flush=True)
 
     async def on_message(self, message: discord.Message) -> None:
         if message.author == self.user:
             return
 
+        is_mention = self.user and self.user.mentioned_in(message)
+        is_dm = isinstance(message.channel, discord.DMChannel)
+        is_listen = message.channel.id in config.listen_channels
+        guild_id = message.guild.id if message.guild else 0
+        guild_name = message.guild.name if message.guild else "DM"
+        is_listen_guild = guild_id in config.listen_guilds
+
+        logger.info(
+            "📨 Discord msg | guild=%s ch=%s(%s) author=%s is_mention=%s is_dm=%s is_listen=%s is_listen_guild=%s content=%s",
+            guild_name,
+            message.channel.name if hasattr(message.channel, 'name') else "DM",
+            message.channel.id,
+            message.author,
+            is_mention,
+            is_dm,
+            is_listen,
+            is_listen_guild,
+            message.content[:80] if message.content else "(empty)",
+        )
+
         haven_role_id = 1510890634989408269
 
         if not (
-            self.user and self.user.mentioned_in(message)
+            is_mention
             or haven_role_id in message.raw_role_mentions
-            or isinstance(message.channel, discord.DMChannel)
-            or message.channel.id in config.listen_channels
+            or is_dm
+            or is_listen
+            or is_listen_guild
         ):
+            logger.info("⛔ Discord msg FILTERED | ch=%s reason: no match", message.channel.id)
             return
 
+        logger.info("✅ Discord msg ACCEPTED | ch=%s", message.channel.id)
         await self._adapter.handle_message(message)
 
 
