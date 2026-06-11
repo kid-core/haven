@@ -12,9 +12,11 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from core.paths import skills_dir
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_SKILL_DIR = Path(__file__).resolve().parent.parent.parent / "skills_store"
+DEFAULT_SKILL_DIR = skills_dir()
 
 
 # ---------------------------------------------------------------------------

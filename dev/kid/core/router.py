@@ -1,22 +1,29 @@
-"""State-machine ReAct loop: wires ToolRegistry + BaseProvider together (Phase 2a extended)."""
+"""State-machine ReAct loop: wires ToolRegistry + BaseProvider together (Phase 2a extended).
+
+Inherits shared provider-fallback and tool-execution infrastructure from
+BaseReActLoop (see base_react_loop.py).
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
 from .base_provider import BaseProvider
+from .base_react_loop import BaseReActLoop, _clean, TURN_LIMIT_MESSAGE
 from .category_router import CategoryRouter, ExecutionMode
+from .paths import ltm_dir
+import sys as _sys
+_sys.path.insert(0, "/mnt/z/Haven")
+
 from .tool_registry import PolicyBlockedError, ToolRegistry
+from agent.tool_output import wrap_output
+from .pending_file import PendingFileStore, set_pending_file_store, set_current_session
 
 if TYPE_CHECKING:
     from learning.skill_store import SkillStore
     from soul.memory import LongTermMemory, SessionStore
-
-# Regex that matches any lone surrogate character (U+D800–U+DFFF)
-_SURROGATE_RE = re.compile(r"[" + "".join(chr(c) for c in range(0xD800, 0xE000)) + "]")
 
 logger = logging.getLogger(__name__)
 
@@ -25,20 +32,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "Use them when needed."
 )
 
-TURN_LIMIT_MESSAGE = (
-    "I've reached the maximum number of turns and wasn't able to "
-    "complete the request. Please try a more specific question."
-)
-
-
-def _clean(text: str | None) -> str:
-    """Strip lone surrogates so json.dumps won't choke."""
-    if not text:
-        return ""
-    return _SURROGATE_RE.sub("", text)
-
-
-class Router:
+class Router(BaseReActLoop):
     """ReAct loop that pairs providers with a tool registry.
 
     Phase 2a additions:
@@ -56,9 +50,20 @@ class Router:
         skill_store: SkillStore | None = None,
         default_timeout: float = 30.0,
         category_router: CategoryRouter | None = None,
+        transport_names: list[str] | None = None,
     ) -> None:
-        self._registry = tool_registry
+        # Normalise: single provider -> list of one
+        if isinstance(providers, BaseProvider):
+            norm_providers: list[tuple[BaseProvider, str | None]] = [
+                (providers, None)
+            ]
+        else:
+            norm_providers = providers
+
+        super().__init__(tool_registry, norm_providers)
+
         self._system_prompt = system_prompt
+        self._transport_names = transport_names or []
         self._history: dict[str, list[dict[str, Any]]] = {}
         self._session_store = session_store
         self._long_term_memory = long_term_memory  # Phase 2a
@@ -75,111 +80,113 @@ class Router:
         from tools.spawn_tool import set_spawn_manager
         set_spawn_manager(self._spawn_manager)
 
+        # Phase 6 — background task system
+        from tools.background_task import set_task_manager, set_background_context
+
+        from core.task_manager import TaskManager
+
+        self.task_manager = TaskManager(
+            max_concurrent=5,
+            storage_path=str(ltm_dir() / "tasks.json"),
+            archive_path=str(ltm_dir() / "tasks_archive.json"),
+            auto_persist=True,
+        )
+        set_task_manager(self.task_manager)
+
+        # Universal file delivery — PendingFileStore (Phase 11)
+        self._pending_files = PendingFileStore()
+        set_pending_file_store(self._pending_files)
+
+        # Phase 7 — schedule orchestrator
+        from tools.schedule_tool import set_scheduler
+
+        from .scheduler import Scheduler
+
+        self.scheduler = Scheduler(
+            task_manager=self.task_manager,
+            storage_path=str(ltm_dir() / "schedules.json"),
+        )
+        set_scheduler(self.scheduler)
+
         self._default_timeout = default_timeout  # Phase 0
 
-        # Normalise: single provider -> list of one
-        if isinstance(providers, BaseProvider):
-            self._providers: list[tuple[BaseProvider, str | None]] = [
-                (providers, None)
-            ]
-        else:
-            self._providers = providers
+        # ── Observability (P0) ───────────────────────────────────
+        from .tracer import Tracer
+        self._tracer = Tracer()
+
+        # ── Circuit breakers per provider (P0) ──────────────────────
+        from .circuit_breaker import CircuitBreaker
+        self._breakers: dict[int, CircuitBreaker] = {}
+        for p, _ in self._providers:
+            model_name = getattr(p, "get_model", lambda: "unknown")()
+            cb = CircuitBreaker(
+                name=f"{type(p).__name__}:{model_name}",
+                failure_threshold=3,
+                cooldown_seconds=30.0,
+            )
+            self._breakers[id(p)] = cb
+
+        # ── Startup health check (P1) ─────────────────────────────
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(self._health_check())
+        except RuntimeError:
+            pass  # no event loop yet (e.g. during tests)
+
+        # Wire background agent context (Phase 10) — must be after self._providers
+        set_background_context(
+            providers=self._providers,
+            tool_registry=self._registry,
+        )
+
+        # Wire model switching tool
+        from tools.set_model import set_providers as _set_providers
+        _set_providers(self._providers)
 
         # Phase 1b — category-aware routing
         self._cat_router = category_router or CategoryRouter()
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    # ==================================================================
+    # BaseReActLoop hooks — provider fallback
+    # ==================================================================
 
-    async def process(
-        self,
-        user_message: str,
-        session_id: str = "default",
-        max_turns: int = 10,
-    ) -> str:
-        """Run the ReAct loop for a single user message."""
-        messages = self._get_or_init_history(session_id)
-        messages.append({"role": "user", "content": _clean(user_message)})
-        tools = self._registry.get_openai_tools() or None
+    def _should_skip_provider(self, provider: BaseProvider) -> bool:
+        """Skip provider if its circuit breaker is open."""
+        breaker = self._breakers.get(id(provider))
+        return breaker is not None and not breaker.allow_request()
 
-        for _turn in range(max_turns):
-            # ------ call the model (with fallback) --------------------------
-            response = None
-            last_error = None
-            for provider, _ in self._providers:
-                try:
-                    response = await provider.chat_completion(
-                        messages=messages, tools=tools,
-                    )
-                    last_error = None
-                    break
-                except Exception as exc:
-                    last_error = exc
-                    logger.warning(
-                        "Provider %s failed, trying next: %s",
-                        type(provider).__name__, exc,
-                    )
-            if last_error is not None:
-                return f"All providers failed. Last error: {last_error}"
+    def _on_provider_start(self, provider: BaseProvider) -> None:
+        """Open a tracer span for this provider call."""
+        self._tracer.span(
+            "provider",
+            provider=type(provider).__name__,
+            model=getattr(provider, "get_model", lambda: "?")(),
+        )
 
-            content: str | None = response.content
-            tool_calls: list[dict[str, Any]] | None = response.tool_calls
-            reasoning_content: str | None = response.reasoning_content
+    def _on_provider_success(self, provider: BaseProvider) -> None:
+        """Record success to circuit breaker."""
+        breaker = self._breakers.get(id(provider))
+        if breaker:
+            breaker.record_success()
 
-            # ------ text response -> done -----------------------------------
-            if not tool_calls:
-                text = _clean(content or "")
-                assistant_msg: dict[str, Any] = {"role": "assistant", "content": text}
-                if reasoning_content:
-                    assistant_msg["reasoning_content"] = _clean(reasoning_content)
-                messages.append(assistant_msg)
-                self._save_history(session_id, messages)
-                return text
+    def _on_provider_error(self, provider: BaseProvider, exc: Exception) -> None:
+        """Record failure to circuit breaker."""
+        breaker = self._breakers.get(id(provider))
+        if breaker:
+            breaker.record_failure()
 
-            # ------ tool-call turn ------------------------------------------
-            assistant_msg = {"role": "assistant", "content": _clean(content)}
-            assistant_msg["tool_calls"] = tool_calls
-            if reasoning_content:
-                assistant_msg["reasoning_content"] = _clean(reasoning_content)
-            messages.append(assistant_msg)
+    # ==================================================================
+    # BaseReActLoop hooks — tool execution
+    # ==================================================================
 
-            for tc in tool_calls:
-                tc_id: str = tc.get("id", "")
-                fn: dict[str, Any] = tc.get("function", {})
-                name: str = fn.get("name", "")
-                arguments: dict[str, Any] = fn.get("arguments", {})
-
-                if isinstance(arguments, str):
-                    import json
-                    try:
-                        arguments = json.loads(arguments)
-                    except json.JSONDecodeError:
-                        arguments = {}
-
-                result_msg = await self._execute_tool(
-                    tool_call_id=tc_id, name=name, arguments=arguments,
-                )
-                messages.append(result_msg)
-
-        self._save_history(session_id, messages)
-        return TURN_LIMIT_MESSAGE
-
-    # ------------------------------------------------------------------
-    # Tool execution with Phase 0 + Phase 1b enforcement
-    # ------------------------------------------------------------------
-
-    async def _execute_tool(
-        self, tool_call_id: str, name: str, arguments: dict,
-    ) -> dict:
-        """Execute a tool with policy checks, timeout, and category routing."""
-        import json
-
-        # Check if tool requires confirmation
+    def _pre_tool_check(self, name: str, arguments: dict) -> dict | None:
+        """Check if tool requires user confirmation; short-circuit if so."""
         if self._registry.is_confirm_required(name):
+            import json
             return {
                 "role": "tool",
-                "tool_call_id": tool_call_id,
+                "tool_call_id": "",
                 "content": json.dumps({
                     "requires_confirmation": True,
                     "tool": name,
@@ -191,6 +198,100 @@ class Router:
                     ),
                 }),
             }
+        return None
+
+    # ==================================================================
+    # Public API
+    # ==================================================================
+
+    async def process(
+        self,
+        user_message: str,
+        session_id: str = "default",
+        max_turns: int = 30,
+    ) -> str:
+        """Run the ReAct loop for a single user message."""
+        self._tracer.start()
+        self._tracer.set_tag("session_id", session_id)
+
+        messages = self._get_or_init_history(session_id)
+        messages.append({"role": "user", "content": _clean(user_message)})
+        tools = self._registry.get_openai_tools() or None
+
+        for _turn in range(max_turns):
+            # ------ call the model (with fallback + circuit breakers) ------
+            response, err = await self._call_providers(messages, tools)
+            if response is None:
+                self._tracer.log_summary()
+                return f"All providers failed. Last error: {err}" if err else "No providers configured."
+
+            content: str | None = response.content
+            tool_calls: list[dict[str, Any]] | None = response.tool_calls
+            reasoning_content: str | None = response.reasoning_content
+
+            # ------ text response -> done -----------------------------------
+            if not tool_calls:
+                text = _clean(content or "")
+                assistant_msg = self.build_assistant_msg(text)
+                if reasoning_content:
+                    assistant_msg["reasoning_content"] = _clean(reasoning_content)
+                messages.append(assistant_msg)
+                self._save_history(session_id, messages)
+                self._tracer.log_summary()
+                return text
+
+            # ------ tool-call turn ------------------------------------------
+            assistant_msg = self.build_assistant_msg(
+                content, tool_calls=tool_calls,
+            )
+            if reasoning_content:
+                assistant_msg["reasoning_content"] = _clean(reasoning_content)
+            messages.append(assistant_msg)
+
+            for tc in tool_calls:
+                tc_id: str = tc.get("id", "")
+                fn: dict[str, Any] = tc.get("function", {})
+                name: str = fn.get("name", "")
+                arguments: dict[str, Any] = fn.get("arguments", {})
+                set_current_session(session_id)
+
+                if isinstance(arguments, str):
+                    import json
+                    try:
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        arguments = {}
+
+                with self._tracer.span("tool", tool_name=name):
+                    result_msg = await self._execute_tool(
+                        tool_call_id=tc_id, name=name, arguments=arguments,
+                    )
+                messages.append(result_msg)
+
+        self._save_history(session_id, messages)
+        return TURN_LIMIT_MESSAGE
+
+    # ==================================================================
+    # Tool execution with Phase 0 + Phase 1b enforcement
+    # ==================================================================
+
+    async def _execute_tool(
+        self, tool_call_id: str, name: str, arguments: dict,
+    ) -> dict:
+        """Execute a tool with policy checks, timeout, and category routing.
+
+        Overrides the base _execute_tool() because Router needs:
+        - 2-attempt smart retry
+        - Category-aware routing (AI_PROXY mode)
+        - Structured ToolOutput wrapping (wrap_output)
+        - Skill observation (Phase 3)
+        """
+        import json
+
+        # Pre-check hook — confirmation gate
+        pre = self._pre_tool_check(name, arguments)
+        if pre is not None:
+            return pre
 
         # Resolve tool spec and category (Phase 1b)
         spec = self._registry.get(name)
@@ -216,49 +317,92 @@ class Router:
                     arguments["_provider"] = provider
                     logger.debug("Tool %r → injected AI provider", name)
 
-        try:
-            result_msg = await asyncio.wait_for(
-                self._registry.execute(
-                    tool_call_id=tool_call_id, name=name, arguments=arguments,
-                ),
-                timeout=timeout,
+        # ── Smart retry: try once, retry once on transient errors ─────
+        last_error: str | None = None
+        error_code: str = "UNKNOWN"
+        retryable: bool = False
+        did_retry = False
+        tool_result: dict | None = None
+
+        for attempt in range(2):  # max 2 attempts
+            try:
+                raw = await asyncio.wait_for(
+                    self._registry.execute(
+                        tool_call_id=tool_call_id,
+                        name=name,
+                        arguments=arguments,
+                    ),
+                    timeout=timeout,
+                )
+                tool_result = raw
+                last_error = None
+                break
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Tool %r timed out (attempt %d/2)", name, attempt + 1,
+                )
+                if attempt == 0:
+                    continue
+                last_error = f"Tool {name!r} timed out after {timeout}s."
+                error_code = "TIMEOUT"
+                retryable = True
+                break
+            except PolicyBlockedError as exc:
+                logger.info("Tool %r blocked by policy: %s", name, exc.reason)
+                last_error = f"Policy blocked: {exc.reason}"
+                error_code = "PERMISSION_DENIED"
+                retryable = False
+                did_retry = True
+                break
+            except FileNotFoundError as exc:
+                err_str = str(exc)
+                logger.warning("Tool %r file not found: %s", name, err_str[:120])
+                last_error = err_str
+                error_code = "FILE_NOT_FOUND"
+                retryable = False
+                did_retry = True
+                break
+            except Exception as exc:
+                err_str = str(exc)
+                logger.warning(
+                    "Tool %r error (attempt %d/2): %s",
+                    name, attempt + 1, err_str[:120],
+                )
+                last_error = err_str
+                error_code = "API_ERROR"
+                retryable = True
+                did_retry = True
+                if attempt == 0:
+                    continue
+                break
+
+        # ── Build ToolOutput-wrapped result ─────────────────────────
+        if last_error is not None:
+            logger.info(
+                "Tool %r failed after 2 attempts: %s", name, last_error[:150],
             )
-        except TimeoutError:
-            logger.warning("Tool %r timed out after %ss", name, timeout)
-            result_msg = {
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "content": json.dumps({
-                    "error": f"Tool {name!r} timed out after {timeout}s."
-                }),
-            }
-        except PolicyBlockedError as exc:
-            logger.info("Tool %r blocked by policy: %s", name, exc.reason)
-            result_msg = {
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "content": json.dumps({
-                    "error": f"Policy blocked: {exc.reason}"
-                }),
-            }
-        except Exception as exc:
-            logger.exception("Tool execution error: %s", name)
-            result_msg = {
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "content": json.dumps({"error": str(exc)}),
-            }
+            output = wrap_output(
+                status="failure",
+                error={"code": error_code, "message": last_error, "retryable": retryable},
+            )
+        else:
+            raw_content = tool_result.get("content") if isinstance(tool_result, dict) else str(tool_result)
+            output = wrap_output(status="success", data=raw_content)
+            if did_retry:
+                logger.info("Tool %r succeeded on retry", name)
+
+        result_msg = self.build_tool_result_msg(tool_call_id, json.dumps(output))
 
         # Phase 3: observe tool call for pattern learning
         if self._skill_factory is not None and spec is not None:
-            success = '"error"' not in result_msg.get("content", "")
+            success = output["status"] == "success"
             self._skill_factory.observe(
                 tool_name=name,
                 arguments=arguments,
                 category=spec.category,
                 success=success,
                 session_id="",  # filled by caller if needed
-                response_preview=result_msg.get("content", "")[:200],
+                response_preview=json.dumps(output)[:200],
             )
 
         return result_msg
@@ -294,10 +438,39 @@ class Router:
                 from learning.skill_factory import inject_active_skills
                 prompt = inject_active_skills(self._skill_store, prompt)
 
+            # Inject capability summary (fresh from Router state)
+            prompt += self._build_capability_summary()
+
             self._history[session_id] = [
                 {"role": "system", "content": prompt}
             ]
         return self._history[session_id]
+
+    def _build_capability_summary(self) -> str:
+        """Build a fresh capability summary from current Router state."""
+        tools = [
+            t["function"]["name"]
+            for t in self._registry.get_openai_tools()
+        ]
+        models = []
+        for p, _ in self._providers:
+            try:
+                models.append(p.get_model())
+            except Exception:
+                models.append(type(p).__name__)
+        transports = self._transport_names or []
+
+        lines = [
+            "",
+            "[Current Capabilities]",
+        ]
+        if tools:
+            lines.append(f"Tools: {', '.join(sorted(tools))}")
+        if models:
+            lines.append(f"Models: {', '.join(models)}")
+        if transports:
+            lines.append(f"Platforms: {', '.join(transports)}")
+        return "\n".join(lines)
 
     def _save_history(self, session_id: str, messages: list[dict]) -> None:
         """Persist messages + auto-summarise to long-term memory (Phase 2a)."""
@@ -323,3 +496,44 @@ class Router:
         self._history.pop(session_id, None)
         if self._session_store is not None:
             self._session_store.save(session_id, [])
+
+    def pop_pending_files(self, session_id: str) -> list:
+        """Dequeue and return pending file deliveries for *session_id*."""
+        return self._pending_files.pop_all(session_id)
+
+    # ── Startup health check (P1) ───────────────────────────────
+
+    async def _health_check(self) -> None:
+        """Ping each provider at startup to validate API keys."""
+        for provider, _ in self._providers:
+            name = type(provider).__name__
+            try:
+                async with asyncio.timeout(5):
+                    ok = await provider.ping()
+                if ok:
+                    logger.info("Health check OK: %s", name)
+                else:
+                    logger.warning("Health check FAIL: %s — ping returned False", name)
+            except asyncio.TimeoutError:
+                logger.warning("Health check TIMEOUT: %s (5s)", name)
+            except Exception as exc:
+                logger.warning("Health check FAIL: %s — %s", name, exc)
+
+    # ── Phase 7: Scheduler lifecycle ───────────────────────────────
+
+    async def start_scheduler(self) -> None:
+        """Start the schedule watcher (called after transports are ready)."""
+        await self.scheduler.start()
+
+    async def close_scheduler(self) -> None:
+        """Graceful shutdown of the scheduler (persist + cancel watcher)."""
+        await self.scheduler.close()
+
+    # ── Phase 9: Task persistence ─────────────────────────────────
+
+    async def restore_tasks(self) -> dict[str, int]:
+        """Restore persisted task records after a restart.
+
+        Returns a dict with "restored" and "interrupted" counts.
+        """
+        return await self.task_manager._restore()

@@ -2,7 +2,7 @@
 Telegram transport for Haven.
 
 Connects to Telegram via python-telegram-bot, listens for text messages,
-and routes messages through the Router.
+and routes messages through the TransportAdapter shared pipeline.
 
 To use: pass a Router instance to ``run_telegram``.
 """
@@ -12,9 +12,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters
 
@@ -23,55 +23,114 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-load_dotenv("/mnt/z/Core/.env")
-load_dotenv("/root/.openclaw/env")
+from .adapter import TransportAdapter
+from core.config import config  # noqa: E402
 
 
-class TelegramHandler:
-    """DI-based handler — Router is injected via constructor (Section 3.3)."""
+class TelegramAdapter(TransportAdapter):
+    """Telegram transport — thin protocol wrapper over TransportAdapter."""
 
-    def __init__(self, router: Router) -> None:
-        self._router = router
-
-    async def __call__(self, update: Update, _context: object) -> None:
-        """Handle an incoming Telegram message."""
-        if not update.message or not update.message.text:
-            return
-
-        user_id = str(update.message.from_user.id)
-        text = update.message.text.strip()
-        session_id = f"telegram:{user_id}"
-
+    async def _send_text(self, channel_id: str, text: str) -> bool:
+        # Telegram uses chat_id directly as integer
         try:
-            reply = await self._router.process(text, session_id=session_id)
+            from telegram import Bot
+            bot = Bot(config.telegram_token)
+            await bot.send_message(chat_id=int(channel_id), text=text)
+            return True
         except Exception as exc:
-            logger.exception("Router error for Telegram message")
-            reply = f"❌ Sorry, I hit an error: {exc}"
+            logger.warning("Telegram send_text failed: %s", exc)
+            return False
 
-        await update.message.reply_text(reply)
+    async def _send_file(self, channel_id: str, file_path: str, filename: str) -> bool:
+        try:
+            from telegram import Bot, InputFile
+            bot = Bot(config.telegram_token)
+            with open(file_path, "rb") as fh:
+                await bot.send_document(
+                    chat_id=int(channel_id),
+                    document=InputFile(fh, filename=filename),
+                )
+            return True
+        except Exception as exc:
+            logger.warning("Telegram send_file failed: %s", exc)
+            return False
+
+    def _extract_user_id(self, msg: Update) -> str:
+        if msg.message and msg.message.from_user:
+            return str(msg.message.from_user.id)
+        return "unknown"
+
+    def _extract_text(self, msg: Update) -> str:
+        if msg.message and msg.message.text:
+            return msg.message.text
+        return ""
+
+    def _extract_channel_id(self, msg: Update) -> str:
+        if msg.message:
+            return str(msg.message.chat_id)
+        return ""
 
 
-def run_telegram(router: Router) -> Application | None:
-    """Start the Telegram bot.
+@dataclass
+class TelegramHandle:
+    """Lightweight handle to the Telegram bot for notifications + lifecycle."""
 
-    Returns the Application so the caller can await its shutdown.
-    Returns None if TELEGRAM_TOKEN is not set.
-    """
-    token = os.getenv("TELEGRAM_TOKEN")
+    app: Application | None = None
+    task: asyncio.Task | None = None
+
+    async def notify(self, chat_id: int, text: str) -> bool:
+        if self.app is None or self.app.bot is None:
+            logger.warning("Telegram notification skipped: bot not ready")
+            return False
+        try:
+            await self.app.bot.send_message(chat_id=chat_id, text=text)
+            return True
+        except Exception as exc:
+            logger.warning("Telegram notification failed: %s", exc)
+            return False
+
+    async def shutdown(self) -> None:
+        if self.app is None:
+            return
+        try:
+            if self.app.updater and self.app.updater.running:
+                await self.app.updater.stop()
+            await self.app.stop()
+            await self.app.shutdown()
+            logger.info("Telegram stopped.")
+        except Exception as exc:
+            logger.warning("Telegram shutdown error: %s", exc)
+
+
+def run_telegram(router: Router) -> TelegramHandle:
+    """Start the Telegram bot and return a handle for notifications + shutdown."""
+    token = config.telegram_token
     if not token:
-        logger.warning("TELEGRAM_TOKEN not set — Telegram will not start")
-        return None
+        logger.warning("HAVEN_TELEGRAM_TOKEN not set — Telegram will not start")
+        return TelegramHandle(app=None)
 
-    handler = TelegramHandler(router)
-    app = Application.builder().token(token).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handler))
+    adapter = TelegramAdapter(router)
+
+    app = (
+        Application.builder()
+        .token(token)
+        .connect_timeout(30)
+        .read_timeout(30)
+        .write_timeout(30)
+        .build()
+    )
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, adapter.handle_message))
 
     async def _start():
-        await app.initialize()
-        await app.start()
-        await app.updater.start_polling()
-        logger.info("Telegram bot started")
+        try:
+            await app.initialize()
+            await app.start()
+            await app.updater.start_polling()
+            logger.info("Telegram connected as @%s", app.bot.username)
+        except Exception as exc:
+            logger.warning("Telegram failed to start: %s", exc)
 
-    asyncio.get_event_loop().create_task(_start())
+    loop = asyncio.get_event_loop()
+    task = loop.create_task(_start())
 
-    return app
+    return TelegramHandle(app=app, task=task)

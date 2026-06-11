@@ -13,14 +13,10 @@ import os
 from typing import Any
 
 import httpx
-from dotenv import load_dotenv
 
 from .base_provider import BaseProvider
 from .exceptions import ProviderError
 from .models import ProviderResponse
-
-load_dotenv("/root/.openclaw/env")
-load_dotenv("/mnt/z/Core/.env")
 
 
 class HttpProvider(BaseProvider):
@@ -52,8 +48,10 @@ class HttpProvider(BaseProvider):
         }
         if headers_extra:
             headers.update(headers_extra)
+        # NOTE: httpx base_url always appends trailing slash to post(""),
+        # which breaks OpenRouter (returns 404). Store endpoint separately.
+        self._api_url = base_url
         self._client = httpx.AsyncClient(
-            base_url=base_url,
             timeout=httpx.Timeout(timeout),
             headers=headers,
         )
@@ -103,7 +101,7 @@ class HttpProvider(BaseProvider):
     async def _do_request(self, payload: dict) -> dict:
         """POST the payload and parse JSON.  Guard clause: raises on any failure."""
         try:
-            response = await self._client.post("", json=payload)
+            response = await self._client.post(self._api_url, json=payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise ProviderError(

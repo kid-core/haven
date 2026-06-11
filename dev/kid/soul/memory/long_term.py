@@ -13,9 +13,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from core.config import config
+from core.paths import ltm_dir
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_MEMORY_DIR = Path(__file__).resolve().parent.parent.parent / "long_term_memory"
+DEFAULT_MEMORY_DIR = ltm_dir()
 
 
 @dataclass
@@ -213,3 +216,40 @@ class LongTermMemory:
 
     def __len__(self) -> int:
         return len(self._entries)
+
+    # ------------------------------------------------------------------
+    # Eviction (P2)
+    # ------------------------------------------------------------------
+
+    def evict(self, force: bool = False) -> int:
+        """Remove entries that exceed configured limits.
+
+        Called automatically after :meth:`add`.  Pass ``force=True``
+        to trigger an unscheduled eviction (e.g. at startup).
+
+        Strategies (applied in order):
+        1. TTL - remove entries older than memory_eviction_ttl_days.
+        2. LRU - if still over memory_max_entries, keep most recent.
+
+        Returns the number of entries evicted.
+        """
+        before = len(self._entries)
+
+        # Strategy 1: TTL
+        cutoff = time.time() - config.memory_eviction_ttl_days * 86400
+        self._entries = [e for e in self._entries if e.last_accessed >= cutoff]
+
+        # Strategy 2: LRU
+        max_entries = config.memory_max_entries
+        if len(self._entries) > max_entries:
+            self._entries.sort(key=lambda e: e.last_accessed, reverse=True)
+            self._entries = self._entries[:max_entries]
+
+        evicted = before - len(self._entries)
+        if evicted:
+            self._save()
+            logger.info(
+                "Evicted %d memory entries (before=%d, after=%d)",
+                evicted, before, len(self._entries),
+            )
+        return evicted

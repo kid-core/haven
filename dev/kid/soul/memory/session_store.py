@@ -6,9 +6,11 @@ import json
 import logging
 from pathlib import Path
 
+from core.paths import session_dir
+
 logger = logging.getLogger(__name__)
 
-SESSION_DIR = Path(__file__).resolve().parent.parent.parent / "sessions"
+SESSION_DIR = session_dir()
 
 
 class SessionStore:
