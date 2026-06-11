@@ -29,8 +29,8 @@ def set_spawn_manager(mgr: SpawnManager) -> None:
 
 
 @tool(
-    category=ToolCategory.MEMORY,
-    policy=ToolPolicy(timeout=300.0, rate_limit=30.0),
+    category=ToolCategory.COLLAB,
+    policy=ToolPolicy(timeout=300.0, rate_limit=30.0, require_confirm=True),
 )
 @resource_gate(auto_estimate=True)
 async def spawn_child(
@@ -38,17 +38,17 @@ async def spawn_child(
     timeout: float = 300.0,
     max_turns: int = 10,
 ) -> str:
-    """Delegate a sub-task to an isolated child session.
+    """Delegate a GENUINELY COMPLEX sub-task to an isolated child session.
 
-    The child runs its own ReAct loop with full tool access, limited turns,
-    and returns a single result.  Use for independent work that shouldn't
-    pollute the main conversation context.
+    ⚠️  ONLY use this when you need 3+ distinct tool calls AND reasoning
+    between them.  For single operations (read, write, search, list, move),
+    use the dedicated tool directly — do NOT spawn a child.
 
-    Good for: summarization, code analysis, research, document updates.
-    Bad for: real-time interactive tasks.
+    Valid: multi-step research, code refactoring, batch file processing.
+    INVALID: reading one file, searching one query, running one command.
 
     Args:
-        task:       The task description for the child session.
+        task:       The complex task for the child session.
         timeout:    Max seconds to wait (default 5 min, max 3600).
         max_turns:  Max ReAct iterations for the child (default 10).
 
@@ -57,6 +57,19 @@ async def spawn_child(
     """
     if _spawn_manager is None:
         return "[spawn error] Sub-task delegation not configured. SpawnManager not wired."
+
+    # ── Anti-trivial gate: reject obviously single-step tasks ─────
+    task_lower = task.lower().strip()
+    trivial_patterns = [
+        ("read", "Use `read_file` directly instead of spawning a child."),
+        ("ls ", "Use `execute_command ls` directly."),
+        ("list files", "Use `execute_command ls` directly."),
+        ("cat ", "Use `read_file` directly."),
+        ("search for", "Use `web_search` directly."),
+    ]
+    for trigger, advice in trivial_patterns:
+        if task_lower.startswith(trigger):
+            return f"[spawn rejected] This looks like a single-step task. {advice}"
 
     if max_turns == 10:  # default → auto-estimate
         from core.task_complexity import TaskComplexityEstimator

@@ -56,7 +56,16 @@ async def read_file(path: str) -> str:
 
     # Check existence
     if not os.path.exists(resolved):
-        return f"[error] File not found: {resolved}"
+        # Auto-list parent directory to help the LLM find the right file
+        parent = os.path.dirname(resolved) or "."
+        try:
+            siblings = sorted(os.listdir(parent))
+        except (OSError, PermissionError):
+            siblings = ["(cannot read directory)"]
+        listing = ", ".join(siblings[:50])
+        if len(siblings) > 50:
+            listing += f" ... and {len(siblings) - 50} more"
+        return f"[error] File not found: {resolved}\nDirectory '{parent}' contains: [{listing}]"
 
     if not os.path.isfile(resolved):
         return f"[error] Not a regular file: {resolved}"
