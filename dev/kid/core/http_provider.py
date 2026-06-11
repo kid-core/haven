@@ -73,10 +73,12 @@ class HttpProvider(BaseProvider):
         payload = self._build_payload(messages, tools, temperature, max_tokens)
         data = await self._do_request(payload)
         choice = self._parse_choice(data)
+        usage = self._parse_usage(data)
         return ProviderResponse(
             content=choice.get("content"),
             tool_calls=choice.get("tool_calls"),
             reasoning_content=choice.get("reasoning_content"),
+            usage=usage,
         )
 
     def _build_payload(
@@ -132,6 +134,18 @@ class HttpProvider(BaseProvider):
             raise ProviderError(
                 f"Unexpected {self._name} response structure: {data}"
             ) from exc
+
+    def _parse_usage(self, data: dict) -> Usage | None:
+        """Extract token usage from the response, or None if absent."""
+        from core.models import Usage  # noqa: F811
+        u = data.get("usage")
+        if not isinstance(u, dict):
+            return None
+        return Usage(
+            prompt_tokens=u.get("prompt_tokens", 0),
+            completion_tokens=u.get("completion_tokens", 0),
+            total_tokens=u.get("total_tokens", 0),
+        )
 
     async def close(self) -> None:
         await self._client.aclose()

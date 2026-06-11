@@ -15,6 +15,7 @@ from .base_react_loop import BaseReActLoop, _clean, TURN_LIMIT_MESSAGE
 from .category_router import CategoryRouter, ExecutionMode
 from .paths import ltm_dir
 from .prompt_assembler import SystemPromptAssembler
+from .budget import BudgetTracker
 import sys as _sys
 _sys.path.insert(0, "/mnt/z/Haven")
 
@@ -53,6 +54,7 @@ class Router(BaseReActLoop):
         default_timeout: float = 30.0,
         category_router: CategoryRouter | None = None,
         transport_names: list[str] | None = None,
+        budget_tracker: BudgetTracker | None = None,
     ) -> None:
         # Normalise: single provider -> list of one
         if isinstance(providers, BaseProvider):
@@ -66,6 +68,7 @@ class Router(BaseReActLoop):
 
         self._system_prompt = system_prompt
         self._prompt_assembler = prompt_assembler
+        self._budget_tracker = budget_tracker
         self._transport_names = transport_names or []
         self._history: dict[str, list[dict[str, Any]]] = {}
         self._session_store = session_store
@@ -227,6 +230,15 @@ class Router(BaseReActLoop):
             if response is None:
                 self._tracer.log_summary()
                 return f"All providers failed. Last error: {err}" if err else "No providers configured."
+
+            # P4c — record token usage for budget tracking
+            if self._budget_tracker is not None and response.usage is not None:
+                model = self._providers[0][0].get_model() if self._providers else "unknown"
+                self._budget_tracker.record(
+                    model,
+                    response.usage.prompt_tokens,
+                    response.usage.completion_tokens,
+                )
 
             content: str | None = response.content
             tool_calls: list[dict[str, Any]] | None = response.tool_calls
