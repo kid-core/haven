@@ -11,6 +11,7 @@ from . import (
     send_file,  # noqa: F401
     send_msg,  # noqa: F401
     set_model,  # noqa: F401
+    skill_tool,  # noqa: F401
     spawn_tool,  # noqa: F401
     task_query,  # noqa: F401
     write,  # noqa: F401

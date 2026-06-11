@@ -292,15 +292,17 @@ def _contains_sensitive(arguments: dict[str, Any]) -> bool:
 
 
 def inject_active_skills(skill_store: SkillStore, system_prompt: str) -> str:
-    """Append all ACTIVE learned skills to the system prompt."""
+    """Append active skill summaries to the system prompt (P5a deferred mode).
+
+    Full skill content is loaded on demand via the ``skill_tool`` tool.
+    This keeps the system prompt lean while keeping all skills accessible.
+    """
     active = skill_store.get_active()
     if not active:
         return system_prompt
 
-    blocks = ["\n[Learned Skills (auto-generated, approved)]"]
-    for skill in active:
-        blocks.append(f"\n### {skill.name}")
-        blocks.append(skill.content)
-        blocks.append(f"(version {skill.version}, success rate: {skill.success_rate:.0%})")
+    blocks = ["\n[Learned Skills — use skill_tool(name) to load details]"]
+    for skill in active[:12]:  # cap at 12 to keep prompt lean
+        blocks.append(f"- {skill.name}: {skill.description[:120]}")
 
-    return system_prompt + "\n".join(blocks)
+    return system_prompt + "\n" + "\n".join(blocks)

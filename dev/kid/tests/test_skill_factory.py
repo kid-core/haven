@@ -296,7 +296,8 @@ class TestInjectActiveSkills:
         result = inject_active_skills(store, "You are Haven.")
         assert "Learned Skills" in result
         assert "short-replies" in result
-        assert "Keep it short" in result
+        # P5a deferred: full content NOT in prompt (use skill_tool to load)
+        assert "Keep it short" not in result
         assert "You are Haven." in result
 
 

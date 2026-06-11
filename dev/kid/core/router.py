@@ -480,6 +480,13 @@ class Router(BaseReActLoop):
         when starting a fresh session.
         """
         if session_id not in self._history:
+            # P5a — clear per-session skill cache for fresh sessions
+            try:
+                from tools.skill_tool import clear_session_cache
+                clear_session_cache()
+            except Exception:
+                pass
+
             if self._session_store is not None:
                 stored = self._session_store.load(session_id)
                 if stored:

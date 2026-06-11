@@ -120,6 +120,9 @@ async def main() -> None:
     # ── Memory (Phase 2a) + Skills (Phase 3) ───────────────────────
     ltm = LongTermMemory()
     skill_store = SkillStore()
+    # P5a — bind skill store for on-demand expansion tool
+    from tools.skill_tool import set_skill_store
+    set_skill_store(skill_store)
     logger.info("Long-term memory: %d entries", len(ltm))
     logger.info("Skills: %d active, %d drafts",
                 len(skill_store.get_active()), len(skill_store.get_drafts()))

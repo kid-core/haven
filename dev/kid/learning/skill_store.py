@@ -198,6 +198,14 @@ class SkillStore:
         """Return all ACTIVE skills (for context injection)."""
         return [s for s in self._skills.values() if s.state == SkillState.ACTIVE]
 
+    def get_by_name(self, name: str) -> StoredSkill | None:
+        """Find an ACTIVE skill by name (case-insensitive)."""
+        low = name.lower()
+        for s in self._skills.values():
+            if s.state == SkillState.ACTIVE and s.name.lower() == low:
+                return s
+        return None
+
     def get_drafts(self) -> list[StoredSkill]:
         """Return all DRAFT skills pending approval."""
         return [s for s in self._skills.values() if s.state == SkillState.DRAFT]
