@@ -13,7 +13,7 @@ import logging
 import os
 import signal
 
-from core.paths import core_env, haven_env, openclaw_env
+from core.paths import core_env, haven_env, openclaw_env, ltm_dir
 from dotenv import load_dotenv
 
 load_dotenv(str(core_env()))
@@ -126,6 +126,12 @@ async def main() -> None:
     logger.info("Long-term memory: %d entries", len(ltm))
     logger.info("Skills: %d active, %d drafts",
                 len(skill_store.get_active()), len(skill_store.get_drafts()))
+
+    # ── Goal Manager (P4d) + Command Handler ───────────────────────
+    from core.goal_manager import GoalManager
+    goal_manager = GoalManager(storage_path=ltm_dir() / "goals.json")
+    from core.command_handler import CommandHandler
+    command_handler = CommandHandler(goal_manager)
 
     # ── System prompt (P4a layered assembler) ───────────────────────
     identity_prompt = build_system_prompt()
