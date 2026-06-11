@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import fcntl
 import logging
 import os
 import signal
+import sys
 
 from core.paths import core_env, haven_env, openclaw_env, ltm_dir
 from dotenv import load_dotenv
@@ -51,8 +53,32 @@ def _handle_signal() -> None:
         _shutdown_event.set()
 
 
+LOCK_FILE = "/tmp/haven.lock"
+_lock_fd = None  # kept alive for the process lifetime
+
+
+def _acquire_instance_lock() -> None:
+    """Prevent dual instances via fcntl exclusive lock (atomic, race-free)."""
+    global _lock_fd
+    _lock_fd = open(LOCK_FILE, "w")
+    try:
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        _lock_fd.seek(0)
+        content = _lock_fd.read().strip()
+        print(
+            f"Haven is already running (PID {content}). "
+            f"Stop it first or remove {LOCK_FILE} if stale.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    _lock_fd.write(str(os.getpid()))
+    _lock_fd.flush()
+
+
 async def main() -> None:
     """Boot Haven: init core, start all transports, wait for shutdown."""
+    _acquire_instance_lock()
     global _shutdown_event
     _shutdown_event = asyncio.Event()
 
@@ -63,11 +89,11 @@ async def main() -> None:
             # Windows / some environments don't support add_signal_handler
             loop.add_signal_handler(sig, _handle_signal)
 
-    # ── Core ────────────────────────────────────────────────────────
+    # ── Core ──────────────────────────────────────────────────────────────
     registry = get_default_registry()
     logger.info("Registered tools: %s", [s.name for s in registry])
 
-    # ── Providers ───────────────────────────────────────────────────
+    # ── Providers ─────────────────────────────────────────────────────────
     deepseek = HttpProvider(
         name="DeepSeek",
         model=PRIMARY_MODEL,
@@ -86,7 +112,7 @@ async def main() -> None:
             "X-Title": "Haven",
         },
     )
-    # ── ARK / BytePlus 備用 (tertiary) ───────────────────────────
+    # ── ARK / BytePlus 備用 (tertiary) ──
     ark_provider = None
     if os.getenv("ARK_API_KEY"):  # secret, stays in env
         ark_provider = HttpProvider(
@@ -104,7 +130,7 @@ async def main() -> None:
     if ark_provider:
         providers.append((ark_provider, None))
 
-    # ── Category Router (Phase 1b) + Ollama vision (Phase 2b) ──────
+    # ── Category Router (Phase 1b) + Ollama vision (Phase 2b) ──
     cat_router = CategoryRouter()
     try:
         from tools.ollama_provider import create_ollama_provider
@@ -117,7 +143,7 @@ async def main() -> None:
     except Exception as exc:
         logger.debug("Ollama provider skipped: %s", exc)
 
-    # ── Memory (Phase 2a) + Skills (Phase 3) ───────────────────────
+    # ── Memory (Phase 2a) + Skills (Phase 3) ──────────────────────────────
     ltm = LongTermMemory()
     skill_store = SkillStore()
     # P5a — bind skill store for on-demand expansion tool
@@ -127,13 +153,13 @@ async def main() -> None:
     logger.info("Skills: %d active, %d drafts",
                 len(skill_store.get_active()), len(skill_store.get_drafts()))
 
-    # ── Goal Manager (P4d) + Command Handler ───────────────────────
+    # ── Goal Manager (P4d) + Command Handler ──────────────────────────────
     from core.goal_manager import GoalManager
     goal_manager = GoalManager(storage_path=ltm_dir() / "goals.json")
     from core.command_handler import CommandHandler
     command_handler = CommandHandler(goal_manager)
 
-    # ── System prompt (P4a layered assembler) ───────────────────────
+    # ── System prompt (P4a layered assembler) ─────────────────────────────
     identity_prompt = build_system_prompt()
     assembler = SystemPromptAssembler(identity_text=identity_prompt)
     # P4d — inject active goals into context after runtime layer
@@ -159,7 +185,7 @@ async def main() -> None:
         transport_names=transports,
     )
 
-    # ── Restore persisted tasks (Phase 9) ─────────────────────────
+    # ── Restore persisted tasks (Phase 9) ─────────────────────────────────
     restore_info = await router.restore_tasks()
     if restore_info["restored"] > 0:
         logger.info(
@@ -171,7 +197,7 @@ async def main() -> None:
     # P4d-ext — wire Scheduler into CommandHandler for /cron
     command_handler.set_scheduler(router.scheduler)
 
-    # ── Banner ──────────────────────────────────────────────────────
+    # ── Banner ────────────────────────────────────────────────────────────
     print("")
     print("=" * 50)
     print("  🏝️  HAVEN — KID Safe Haven")
@@ -187,11 +213,11 @@ async def main() -> None:
     print("=" * 50)
     print("")
 
-    # ── Scheduler (Phase 7) ───────────────────────────────────────
+    # ── Scheduler (Phase 7) ───────────────────────────────────────────────
     await router.start_scheduler()
     logger.info("Scheduler started")
 
-    # ── Transports ──────────────────────────────────────────────────
+    # ── Transports ────────────────────────────────────────────────────────
     tasks: list[asyncio.Task] = []
 
     # Terminal (only when stdin is interactive)
@@ -205,11 +231,31 @@ async def main() -> None:
     tasks.append(discord.task)
 
     # Telegram (background) — returns handle for notifications + shutdown
-    # NOTE: run_telegram starts polling in a background task that completes
-    # quickly — lifecycle is managed via telegram.shutdown(), not task tracking.
     telegram = run_telegram(router, command_handler=command_handler)
 
-    # ── Heartbeat Monitor ──────────────────────────────────────────
+    # ── Wire scheduler notification → Discord DM / Telegram ───────────────
+    async def _schedule_notify(name: str, metadata: dict) -> None:
+        """Send schedule reminders via Discord DM or Telegram."""
+        text = f"⏰ **{name}**"
+        md = metadata or {}
+        discord_user = md.get("discord_dm_user")
+        telegram_chat = md.get("telegram_chat")
+
+        if discord_user:
+            try:
+                await discord.notify_user(int(discord_user), text)
+            except Exception:
+                logger.exception("Schedule notify Discord DM failed for %s", name)
+        if telegram_chat:
+            try:
+                await telegram.notify(int(telegram_chat), text)
+            except Exception:
+                logger.exception("Schedule notify Telegram failed for %s", name)
+
+    router.scheduler.set_notify_handler(_schedule_notify)
+    logger.info("Scheduler notification handler wired (Discord DM + Telegram)")
+
+    # ── Heartbeat Monitor ─────────────────────────────────────────────────
     heartbeat = HeartbeatMonitor(
         interval=config.heartbeat_interval,
         threshold=config.heartbeat_threshold,
@@ -230,7 +276,7 @@ async def main() -> None:
     heartbeat.on_status_change(_heartbeat_notify)
     tasks.append(asyncio.create_task(heartbeat.start()))
 
-    # ── Wait for shutdown signal or task failure ────────────────────
+    # ── Wait for shutdown signal or task failure ──────────────────────────
     wait_tasks = [
         asyncio.create_task(_shutdown_event.wait()),
         *tasks,
@@ -241,7 +287,7 @@ async def main() -> None:
     for t in pending:
         t.cancel()
 
-    # ── Graceful shutdown ───────────────────────────────────────────
+    # ── Graceful shutdown ─────────────────────────────────────────────────
     # Stop Telegram app via handle
     await telegram.shutdown()
 
