@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from .base_provider import BaseProvider
 from .base_react_loop import BaseReActLoop, _clean, TURN_LIMIT_MESSAGE
@@ -249,7 +249,7 @@ class Router(BaseReActLoop):
         user_message: str,
         session_id: str = "default",
         max_turns: int = 30,
-        on_progress: Callable[[dict[str, Any]], None] | None = None,
+        on_progress: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> str:
         """Run the ReAct loop for a single user message."""
         self._tracer.start()
@@ -314,7 +314,7 @@ class Router(BaseReActLoop):
 
                 # ── Progress event: tool start ─────────────────────────
                 if on_progress:
-                    on_progress({
+                    await on_progress({
                         "type": "tool_call",
                         "name": name,
                         "args": arguments,
