@@ -93,7 +93,8 @@ class Tracer:
             )
             raise
         finally:
-            self._active.pop()
+            if self._active:
+                self._active.pop()
             span.end = time.monotonic()
 
     def set_tag(self, key: str, value: Any) -> None:
