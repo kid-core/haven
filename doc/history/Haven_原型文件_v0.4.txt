@@ -193,6 +193,25 @@ Discord Bot + Telegram Bot 雙頻道並行，開機自動啟動。
           client.py (stdio/SSE), discovery.py (工具探索+prefix),
           registry.py (Bridge attach/detach)
 
+  ──  2026-06-11 晚間新增 ──
+
+  fcntl 雙開防護  main.py 啟動時原子鎖
+          fcntl.flock(LOCK_EX|LOCK_NB) 於 /mnt/z/Haven/haven.lock
+          防止雙實例撞 Discord token / Telegram
+          進程崩潰 kernel 自動釋放，無 stale lock
+          defense in depth：外層 haven_tmux.sh pkill + 內層 fcntl
+
+  HAVEN_LISTEN_GUILDS  成個 server 免 @mention
+          設定 guild ID，所有頻道自動回應
+          與 listen_channels 互補（精細 vs 全域）
+
+  HAVEN_SHOW_TOOL_CALLS  直播工具調用過程
+          Router.process() → on_progress → Discord 即時顯示
+          ⚙️ tool_name arg1=v1 arg2=v2
+
+  Tracer concurrent fix  core/tracer.py
+          _active.pop() guard，防止 concurrent session 撞崩
+
 
 【審計清理（2026-06-11）】
 
@@ -268,12 +287,12 @@ Discord Bot + Telegram Bot 雙頻道並行，開機自動啟動。
 
 【關鍵數字】
 
-                    v0.2         v0.4 (P6)
+                    v0.2         v0.4 (P6+)
   ───────────────────────────────────────────
-  原始碼行數         3,080        ~9,896
-  測試行數           ~1,500       ~10,688
+  原始碼行數         3,080        ~10,000
+  測試行數           ~1,500       ~10,700
   測試文件           7            50
-  測試 assertions    702 assert   886 pytest
+  測試 assertions    702 assert   895 pytest
   Provider           1 (OR)       3 chain + breaker
   模組檔案           23           45+
   零循環依賴         ✅          ✅
@@ -290,6 +309,9 @@ Discord Bot + Telegram Bot 雙頻道並行，開機自動啟動。
   Skill 按需載入      ❌           ✅（P5a）
   MCP Protocol        ❌           ✅（P6）
   MessageBus          ❌           ✅
+  雙開防護            ❌           ✅（fcntl）
+  Guild Listen        ❌           ✅（HAVEN_LISTEN_GUILDS）
+  Tool Call 直播      ❌           ✅（HAVEN_SHOW_TOOL_CALLS）
 
 
 【環境變數（.env）】
@@ -305,6 +327,9 @@ Discord Bot + Telegram Bot 雙頻道並行，開機自動啟動。
   HAVEN_HEARTBEAT_THRESHOLD  故障判定次數（default 3）
   HAVEN_NO_TERMINAL          禁用終端（1 = background mode）
   HAVEN_OLLAMA_MODEL         本地視覺模型（default minicpm-v）
+  HAVEN_LISTEN_CHANNELS      免 @mention 頻道（逗號分隔 channel ID）
+  HAVEN_LISTEN_GUILDS        免 @mention 伺服器（逗號分隔 guild ID）
+  HAVEN_SHOW_TOOL_CALLS      直播工具調用（1=開，0=關）
 
 
 【啟動流程】

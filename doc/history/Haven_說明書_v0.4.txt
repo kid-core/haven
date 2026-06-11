@@ -107,6 +107,19 @@ CLI 模式：
   （更多 slash command 規劃中）
 
 
+【Haven 的自動回應規則】
+
+  Haven 在以下情況會回應：
+    1. 被 @mention（任何頻道）
+    2. 私訊（DM）
+    3. 在 HAVEN_LISTEN_CHANNELS 指定的頻道（免 @mention）
+    4. 在 HAVEN_LISTEN_GUILDS 指定的伺服器所有頻道（免 @mention）
+
+  設定範例（.env）：
+    HAVEN_LISTEN_CHANNELS=1514517002730078228
+    HAVEN_LISTEN_GUILDS=1514508652420268093
+
+
 【Haven 會自動做的事】
 
   情境感知：
@@ -258,7 +271,7 @@ CLI 模式：
     3. tests/test_<name>.py
 
 
-【v0.4 新增能力（P4-P6）】
+【v0.4 新增能力（P4-P6 + 晚間強化）】
 
   P4a  Prompt 分層     五層 system prompt，可動態注入
   P4c  Budget         Token 成本追蹤，超支自動 fallback
@@ -266,6 +279,12 @@ CLI 模式：
   P4b  Category 重構   7→6 類別，更清晰的分類體系
   P5a  Skill 按需載入  兩階段 skill injection，節省 context
   P6   MCP Protocol    stdio/SSE 客戶端，工具探索，Bridge 管理
+
+  晚間強化：
+    雙開防護          fcntl 原子鎖，防止雙實例撞 token
+    Guild Listen      整 server 免 @mention（HAVEN_LISTEN_GUILDS）
+    Tool Call 直播    即時顯示工具調用（HAVEN_SHOW_TOOL_CALLS=1）
+    Tracer 修復        concurrent session crash fix
 
   架構清理：
     - 7 項死檔案刪除（14K lines retired tests）
@@ -278,5 +297,6 @@ CLI 模式：
 
   2025-05-20  v0.1   初版，Seed 孵化
   2026-06-08  v0.2   Discord Bot 上線，DeepSeek V4，systemd
-  2026-06-11  v0.4   P4-P6 完成，886 測試，/goal + /cron + MCP
+  2026-06-11  v0.4    P4-P6 + 晚間強化（895 tests）
+                     /goal + /cron + MCP + fcntl 防護 + Guild Listen
                      本文件為 v0.4 權威版本，不與舊版堆疊
