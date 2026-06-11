@@ -7,7 +7,7 @@ any real transport library.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
@@ -112,7 +112,9 @@ class TestTransportAdapter:
     async def test_handle_mention_stripped(self, transport, router):
         msg = {"user_id": "111", "text": "<@!123> hello", "channel_id": "chan_x"}
         await transport.handle_message(msg)
-        router.process.assert_awaited_once_with("hello", session_id="fake:111")
+        router.process.assert_awaited_once_with(
+            "hello", session_id="fake:111", on_progress=ANY,
+        )
 
     # ── User whitelist ───────────────────────────────────────
 
@@ -156,7 +158,9 @@ class TestTransportAdapter:
         transport._transport_name = "Discord"
         msg = {"user_id": "user_42", "text": "Hi"}
         await transport.handle_message(msg)
-        router.process.assert_awaited_once_with("Hi", session_id="discord:user_42")
+        router.process.assert_awaited_once_with(
+            "Hi", session_id="discord:user_42", on_progress=ANY,
+        )
 
     # ── Pending files ─────────────────────────────────────────
 

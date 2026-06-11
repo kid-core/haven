@@ -100,7 +100,26 @@ class TransportAdapter:
             return
 
         session_id = f"{self._transport_name.lower()}:{user_id}"
+        channel_id = self._extract_channel_id(msg)
         pending_files: list = []
+
+        from core.config import config
+
+        async def _on_progress(event: dict) -> None:
+            """Forward tool-call progress to the transport (opt-in via config)."""
+            if not config.show_tool_calls:
+                return
+            if event.get("type") == "tool_call":
+                name = event.get("name", "?")
+                args = event.get("args", {})
+                arg_str = " ".join(f"{k}={v}" for k, v in args.items())
+                if len(arg_str) > 80:
+                    arg_str = arg_str[:77] + "..."
+                await self._send_text(
+                    channel_id,
+                    f"⚙️ `{name}` {arg_str}".strip(),
+                )
+
         try:
             # P4d — intercept /goal commands before Router
             if self._command_handler is not None:
@@ -108,15 +127,18 @@ class TransportAdapter:
                 if cmd_reply is not None:
                     reply = cmd_reply
                 else:
-                    reply = await self._router.process(clean, session_id=session_id)
+                    reply = await self._router.process(
+                        clean, session_id=session_id, on_progress=_on_progress,
+                    )
             else:
-                reply = await self._router.process(clean, session_id=session_id)
+                reply = await self._router.process(
+                    clean, session_id=session_id, on_progress=_on_progress,
+                )
             pending_files = self._router.pop_pending_files(session_id)
         except Exception as exc:
             logger.exception("Router error for %s message", self._transport_name)
             reply = f"❌ Sorry, I hit an error: {exc}"
 
-        channel_id = self._extract_channel_id(msg)
         if pending_files:
             await self._send_text(channel_id, reply)
             for pf in pending_files:

@@ -1,0 +1,282 @@
+┌─────────────────────────────────────────────────────────────┐
+│                  Haven Agent v0.4                           │
+│                  系統說明書                                  │
+│          Discord Bot · Telegram Bot · /goal · /cron         │
+│          更新日期：2026-06-11                                │
+│                                                             │
+│  此文件為 P6（MCP）完成後重新疏理的完整說明書。              │
+│  不再與舊 v0.1/v0.2 內容堆疊。                              │
+└─────────────────────────────────────────────────────────────┘
+
+
+【快速開始】
+
+Haven 已部署為 systemd 長期背景服務，開機自動啟動。
+
+Discord 互動：
+  在 #claude-study 頻道直接發言即可（Haven 會監聽）
+  或私訊 Haven bot
+
+Telegram 互動：
+  私訊 @haven_kid_bot
+
+CLI 模式：
+  cd /mnt/z/Haven && source .venv/bin/activate
+  python3 dev/kid/main.py
+
+
+【操作指引】
+
+  手動啟動——
+
+    方法一（systemd，推薦）：
+      systemctl --user start haven.service
+
+    方法二（前景執行，可看到終端提示符）：
+      cd /mnt/z/Haven
+      .venv/bin/python dev/kid/main.py
+      啟動後會顯示 banner 和「Cris>」終端提示符
+      輸入 exit 離開終端模式（Discord/Telegram 仍會保持運行）
+
+    方法三（純背景執行，無終端）：
+      cd /mnt/z/Haven
+      HAVEN_NO_TERMINAL=1 .venv/bin/python dev/kid/main.py &
+      只啟動 Discord + Telegram，不載入終端互動模式
+
+  手動重啟——
+
+    方法一（systemd，推薦）：
+      systemctl --user restart haven.service
+      服務會自動先停止再啟動，無需手動 kill
+
+    方法二（手動重啟）：
+      1. 找出 Haven 進程：
+           ps aux | grep main.py | grep -v grep
+      2. 安全停止舊進程（見下方）
+      3. 用上方啟動指令重新啟動
+
+  安全停止——
+
+    方法一（systemd，推薦）：
+      systemctl --user stop haven.service
+      發送 SIGTERM，Haven 會 graceful shutdown：
+        - Discord / Telegram connection 正常關閉
+        - 當前任務完成後才退出
+        - Crash journal 寫入最後狀態
+
+    方法二（終端模式下）：
+      在「Cris>」提示符輸入 exit
+      系統會顯示「Haven shut down gracefully」
+
+    方法三（背景運行時）：
+      發送 SIGTERM（非 SIGKILL）：
+        kill <PID>
+      Haven 會觸發 graceful shutdown 流程
+
+    ⚠️ 注意：
+      切勿使用 kill -9（SIGKILL），會跳過 graceful shutdown，
+      可能導致 sessions.json 未保存。
+
+  檢查狀態——
+
+    systemctl --user status haven.service
+    或
+    ps aux | grep main.py | grep -v grep
+    （看到 /mnt/z/Haven/.venv/bin/python main.py 即為運行中）
+
+
+【支援的指令】
+
+  /goal —— 管理持久化目標
+    /goal add <title>                           建立新目標
+    /goal add <title> | <description>           建立目標（含描述）
+    /goal list                                  列出所有目標
+    /goal status                                顯示狀態摘要
+    /goal progress <id> <0-100>                 更新進度
+    /goal done <id>                             標記完成
+    /goal cancel <id>                           取消目標
+    /goal help                                  顯示說明
+
+  /cron —— 管理排程（P7）
+    /cron add "0 9 * * *" "title"               建立每日排程
+    /cron add "*/30 * * * *" "title"            建立定時排程
+    /cron list                                  列出所有排程
+    /cron remove <id>                           移除排程
+    /cron help                                  顯示說明
+
+  （更多 slash command 規劃中）
+
+
+【Haven 會自動做的事】
+
+  情境感知：
+    - 讀取長期記憶（116 項，Vector Index）
+    - 載入 Skill 摘要（P5a 兩階段模式）
+    - 注入當前 active goals 到 system prompt
+
+  排程執行：
+    - 支援 cron expression 排程
+    - 支援一次性（AT）和重複（EVERY）排程
+    - 排程持久化，重啟後自動恢復
+
+  成本控制：
+    - 每 turn 自動追蹤 token 用量
+    - 超出預算時自動切換 fallback provider
+    - primary（DeepSeek V4 Pro）→ fallback（Gemma 4 26B）
+
+  自我診斷：
+    - Heartbeat 每 30 秒檢查 provider 健康
+    - Circuit Breaker 隔離故障 provider
+    - Crash Journal 記錄崩潰，自動恢復
+
+
+【可用工具（LLM 可調用）】
+
+  FILE 類：
+    read_file   —— 讀取檔案內容（支援文字與圖片）
+    write_file  —— 寫入檔案
+
+  ENV 類：
+    execute_command    —— 執行 shell 指令（沙箱）
+    add_schedule       —— 建立排程（AT/EVERY/CRON）
+    remove_schedule    —— 移除排程
+    list_schedules     —— 列出排程
+    pause_schedule     —— 暫停排程
+    resume_schedule    —— 恢復排程
+    set_model          —— 切換 model
+    background_task    —— 委派背景任務
+
+  COLLAB 類：
+    web_search      —— 網路搜尋
+    spawn_child     —— 生成子 agent
+    skill_tool      —— 按需載入 skill 全文（P5a）
+
+  MEMORY 類：
+    memory_search   —— 搜尋記憶
+
+  MEDIA 類：
+    send_file       —— 傳送檔案（Discord）
+
+  SESSION 類：
+    task_query      —— 查詢任務
+    cancel_task     —— 取消任務
+    list_tasks      —— 列出所有任務
+
+
+【系統狀態檢查】
+
+  python3 /mnt/z/Haven/haven.py --status
+
+  顯示項目：
+    - 運行狀態（systemd active/running）
+    - Provider 健康（primary / fallback / tertiary）
+    - 記憶條目數（116 entries）
+    - Skill 狀態（active / drafts）
+    - 排程數量
+    - 當前目標數量
+    - Heartbeat 狀態
+
+
+【測試】
+
+  完整測試套件：
+    cd /mnt/z/Haven/dev/kid
+    python3 -m pytest tests/ -q
+
+  當前狀態：886 passed, 0 failures（2026-06-11）
+
+  測試分類：
+    test_config.py           config 驗證
+    test_budget.py           BudgetTracker
+    test_p4d_goals.py        /goal 系統
+    test_cron_command.py     /cron 系統
+    test_p4b_categories.py   工具分類
+    test_p4d_advisor.py      Advisor 模式
+    test_p5a_skills.py       Skill 兩階段載入
+    test_p6_mcp.py           MCP Protocol
+    test_phase1_mcp.py       MCP 早期測試
+    test_prompt_assembler.py Prompt 五層組裝
+    test_category_router.py  Provider chain
+    test_tool_registry.py    工具註冊
+    test_tool_spec.py        工具規格
+    test_policy.py           ToolPolicy
+    test_task_manager.py     任務持久化
+    test_circuit_breaker.py  斷路器
+    test_react_loop.py       ReAct 循環
+    test_transport.py        傳輸層
+    test_scheduler.py        排程引擎
+    test_skill_factory.py    Skill 工廠
+    共 50 個測試檔案
+
+
+【例外處理架構】
+
+  fallback chain（三層）：
+    Primary (DeepSeek V4 Pro) → Fallback (Gemma 4 26B) → Tertiary (Ark seed-2-0-lite)
+    每層有獨立 Circuit Breaker（5 次失敗觸發 60 秒熔斷）
+
+  Heartbeat：
+    每 30 秒檢查 provider 健康
+    連續 3 次失敗 → 標記 unhealthy
+
+  Crash Journal：
+    崩潰時記錄 traceback + 狀態
+    下次啟動自動檢查並恢復
+
+
+【設定檔位置】
+
+  .env           /mnt/z/Haven/.env      ← 環境變數（HAVEN_ 前綴）
+  config         core/config.py         ← 25 typed fields
+  memory         data/long_term_memory/memory.json        ← 116 項
+  schedules      data/long_term_memory/schedules.json     ← 排程持久化
+  goals          data/long_term_memory/goals.json         ← 目標持久化
+  tasks archive  data/long_term_memory/tasks_archive.json ← 任務記錄
+  skills         data/skills/                             ← Skill 定義
+  sessions       data/sessions/                           ← 會話持久化
+
+
+【開發新增功能】
+
+  新增 slash command（以 /cron 為例）：
+
+    1. core/command_handler.py
+       - COMMAND_PREFIXES 加入 "/cron"
+       - 新增 _dispatch_cron() + _cron_add/list/remove
+       - 需要 Scheduler 注入的話，加 set_scheduler()
+
+    2. main.py
+       - 確保 CommandHandler 在 Router 之後才 .set_scheduler()
+
+    3. tests/test_cron_command.py
+       - FakeScheduler 提供 async-safe 模擬
+       - 測試 dispatch / add / list / remove / not-set
+
+  新增工具：
+    1. tools/<name>.py —— 實作 @tool 函數
+    2. core/tool_registry.py —— register()
+    3. tests/test_<name>.py
+
+
+【v0.4 新增能力（P4-P6）】
+
+  P4a  Prompt 分層     五層 system prompt，可動態注入
+  P4c  Budget         Token 成本追蹤，超支自動 fallback
+  P4d  Goal + Cron    /goal 目標管理 + /cron 排程管理 + Advisor
+  P4b  Category 重構   7→6 類別，更清晰的分類體系
+  P5a  Skill 按需載入  兩階段 skill injection，節省 context
+  P6   MCP Protocol    stdio/SSE 客戶端，工具探索，Bridge 管理
+
+  架構清理：
+    - 7 項死檔案刪除（14K lines retired tests）
+    - paths.py 單一權威路徑
+    - .env 載入統一到 main.py
+    - data/ 目錄結構建立
+
+
+【版本歷史】
+
+  2025-05-20  v0.1   初版，Seed 孵化
+  2026-06-08  v0.2   Discord Bot 上線，DeepSeek V4，systemd
+  2026-06-11  v0.4   P4-P6 完成，886 測試，/goal + /cron + MCP
+                     本文件為 v0.4 權威版本，不與舊版堆疊

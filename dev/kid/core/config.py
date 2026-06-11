@@ -92,6 +92,11 @@ class HavenConfig:
         ],
     )
 
+    # ── Visibility ───────────────────────────────────────────
+    show_tool_calls: bool = field(
+        default_factory=lambda: os.getenv("HAVEN_SHOW_TOOL_CALLS", "0") == "1",
+    )
+
     # ── Memory eviction ────────────────────────────────────────
     memory_max_entries: int = field(
         default_factory=lambda: int(os.getenv("HAVEN_MEMORY_MAX_ENTRIES", "1000")),

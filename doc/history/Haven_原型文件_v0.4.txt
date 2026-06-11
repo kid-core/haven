@@ -1,0 +1,356 @@
+┌──────────────────────────────────────────────────┐
+│                  Haven Agent v0.4                             	  │
+│                  原型文件                                       	  │
+│          獨立 Agent 作業系統 · Discord + Telegram 雙頻道   	      │
+│          更新日期：2026-06-11                                	      │
+│                                                              	      │
+│  此文件為 P6（MCP）完成後重新疏理的完整架構記錄。             	      │
+│  不再與舊 v0.1/v0.2 內容堆疊。                             	      │
+└──────────────────────────────────────────────────┘
+
+
+【什麼是 Haven】
+
+Haven 是 KID 的自主 agent 系統，運行於 GMK Mini PC（WSL2，Debian）。
+它是完全獨立的小型 agent 作業系統，不依賴任何外部平台。
+核心推理引擎基於 Claude Code 源碼的六項設計模式重構。
+透過 OpenRouter 接入 DeepSeek V4 Pro/Flash 模型。
+Discord Bot + Telegram Bot 雙頻道並行，開機自動啟動。
+
+
+【設計哲學】
+
+  零循環依賴（Zero-Circular）：所有 import 為 tree/DAG
+  窄接口（Narrow Interface）：每模塊只暴露最少必要符號
+  顯式注入（Explicit DI）：Scheduler/Memory/Skills 透過 init 或 setter 注入
+  自我修復（Self-Healing）：Circuit Breaker + Crash Journal + Heartbeat
+  Test-First：每項功能伴隨完整 pytest
+
+
+【六項核心設計來源】
+
+  基於 Claude Code 源碼洩漏的六項設計模式（2026-05 取得）：
+
+  1. ReAct Loop ── Think → Act → Observe 循環
+     → 實現於 core/base_react_loop.py
+     → 主 Router 繼承此類，加入 budget/tracer/task_manager
+
+  2. Tool Registry ── 工具註冊、查找、policy 檢查
+     → 實現於 core/tool_registry.py + core/tool_spec.py + core/policy.py
+     → 20 tools registered
+
+  3. Provider Chain ── 多模型 fallback 鏈
+     → 實現於 core/category_router.py
+     → 支援 primary → fallback → tertiary 三層鏈 + Circuit Breaker
+
+  4. Category Router ── 按任務類型路由不同 provider
+     → 實現於 core/category_router.py
+     → 6 categories: FILE/ENV/MEDIA/COLLAB/MEMORY/SESSION
+
+  5. Transport Abstraction ── 跨協定統一訊息層
+     → 實現於 transport/adapter.py（TransportAdapter）
+     → Discord / Telegram / Terminal 共用同一 Adapter
+
+  6. Task Manager ── 持久化背景任務
+     → 實現於 core/task_manager.py
+     → disconnect 自動保存，reconnect 自動恢復
+
+
+【模組分類總覽】
+
+  Haven 由 45+ Python 模組構成，分為 7 層：
+
+  Transport（傳輸層）
+    transport/
+      adapter.py             傳輸適配器（統一介面）
+      discord_bot.py          Discord 客戶端
+      telegram_bot.py         Telegram 客戶端
+      terminal.py             CLI 終端
+      exceptions.py           傳輸層例外
+
+  Core（核心層）
+    core/
+      router.py               主路由器（所有請求的入口）
+      config.py                25 typed pydantic settings（HAVEN_ 前綴）
+      models.py                Usage / ScheduleRecord / TaskRecord 等數據模型
+      paths.py                 路徑權威來源（single source of truth）
+      categories.py            ToolCategory / 6 category definitions
+      category_router.py       按任務類型路由至專屬 provider
+      policy.py                ToolPolicy（權限/速率/逾時）
+      tool_registry.py         工具註冊中心
+      tool_spec.py             ToolSpec 定義
+      tool_decorator.py        @tool 裝飾器
+      exceptions.py            核心例外
+
+      推理架構
+        base_react_loop.py     ReAct 基礎循環（_raw / _think / _act / _observe）
+        base_provider.py       Provider 抽象基類
+        http_provider.py       OpenRouter/DeepSeek HTTP 客戶端
+        prompt_assembler.py    五層 system prompt 組裝器
+
+      管理模組
+        budget.py              BudgetTracker（token 用量 + 成本追蹤）
+        goal_manager.py        /goal 系統（持久化目標 CRUD）
+        command_handler.py     /goal + /cron 指令分派器
+        advisor.py             Advisor 模式（不確定工具結果時諮詢）
+        scheduler.py           排程引擎（AT/EVERY/CRON 三種模式）
+        task_manager.py        持久化背景任務管理
+        background_agent.py    背景 agent 委派
+        heartbeat.py           心跳監控（provider 健康檢查）
+        circuit_breaker.py     斷路器（provider 故障自動隔離）
+        crash_journal.py       崩潰記錄與恢復
+        resource_gate.py       資源閘道（RAM/磁碟）
+        task_complexity.py     任務拆分與複雜度評估
+        message_bus.py         內部訊息匯流排
+        platform.py            平台識別（WSL/Windows）
+        pending_file.py        待處理檔案佇列
+        tracer.py              請求追蹤
+
+  Tools（工具層）
+    tools/
+      background_task.py       背景任務委派
+      execute_command.py       指令執行（沙箱環境）
+      memory_search.py         記憶搜尋
+      read_file.py             檔案讀取
+      write_file.py            檔案寫入
+      web_search.py            網路搜尋
+      send_file.py             Discord 檔案傳送
+      send_message.py          訊息發送
+      set_model.py             Provider 切換
+      skill_tool.py            Skill 按需載入（P5a）
+      schedule_tool.py         排程管理（P7）
+      spawn_child.py           子 agent 生成
+      spawn_tool.py            子工具註冊
+      task_query.py            任務查詢/取消
+
+      mcp/                     MCP Protocol（P6）
+        client.py               stdio + SSE 客戶端
+        discovery.py            工具探索與 prefix
+        registry.py             Bridge 管理（attach/detach）
+
+  Soul（靈魂層）
+    soul/
+      identity.py              KID 身份 + 系統 prompt 生成
+    soul/memory/
+      long_term.py             長期記憶儲存（116 entries）
+      session_store.py         會話狀態持久化
+      index.py                 記憶索引基類
+      vector_index.py          向量索引
+      summarizer.py            對話摘要
+
+  Learning（學習層）
+    learning/
+      skill_store.py           Skill 註冊與查詢（get_active/get_by_name）
+      skill_factory.py         Skill 注入（deferred 模式，P5a）
+      skill_refiner.py         Reflection-based skill 優化
+
+  Data（資料層）
+    data/
+      sessions/                會話持久化目錄
+      long_term_memory/        長期記憶 + 排程 + 目標
+        memory.json            116 項記憶條目
+        schedules.json         排程持久化
+        goals.json             目標持久化
+        tasks_archive.json     已完成任務記錄
+      skills/                  Skill 定義檔目錄
+
+  Tests（測試層）
+    tests/
+      50 test files
+      ~10,688 行測試程式碼
+      886 pytest assertions，0 failures
+
+
+【P4-P6 新增模組（2026-06-11）】
+
+  P4a  ── core/prompt_assembler.py    五層 system prompt 組裝
+          identity / runtime / user_rules / role / tool
+          每層可獨立注入（Router 動態注入 active goals）
+
+  P4c  ── core/budget.py              BudgetTracker
+          每 provider 不同費率，每 turn 自動記錄用量
+          check_budget() → exhausted? → 觸發 fallback
+
+  P4d-A ─ core/goal_manager.py        /goal 系統
+          Goal CRUD，JSON 持久化，inject_into_context
+
+  P4d-B ─ core/command_handler.py     指令分派器
+          /goal add|done|cancel|list|status|progress
+          /cron add|list|remove
+
+  P4b  ── core/categories.py          7→6 類別重命名
+          FILES→FILE, SYSTEM→ENV, WEB→合入ENV,
+          AI+COMMUNICATION→COLLAB, EXTERNAL→MEMORY
+
+  P4d-B ─ core/advisor.py             Advisor 模式
+          不確定工具結果時，以低費率 provider 諮詢
+
+  P5a  ── tools/skill_tool.py         Skill 按需載入
+          兩階段：系統 prompt 僅含摘要，呼叫時載入全文
+          learning/skill_store.py 新增 get_by_name()
+
+  P6  ──  tools/mcp/                   MCP Protocol 支援
+          client.py (stdio/SSE), discovery.py (工具探索+prefix),
+          registry.py (Bridge attach/detach)
+
+
+【審計清理（2026-06-11）】
+
+  刪除 7 項死檔案/目錄：
+    退休 tests/（14,000行）
+    RETIRED.md
+    __pycache__/
+    三重 long_term_memory → 統一 data/long_term_memory/
+    sessions_backup/（198KB 舊備份）
+    start_discord.sh（指向已死檔案）
+
+  路徑統一：
+    paths.py 為 single source of truth
+    6 modules 改從 paths.py import
+    建立 data/ 結構（sessions/, long_term_memory/, skills/）
+
+  .env 重複載入：
+    11 處 → 3 處（僅 main.py 負責載入）
+    http_provider / discord_bot / telegram_bot 移除重複 load_dotenv
+
+
+【工具分類體系（P4b 後）】
+
+  6 類別，20 工具註冊：
+
+  CATEGORY          TOOLS
+  ─────────────────────────────────────────────────
+  FILE              read_file, write_file
+  ENV               execute_command, schedule_tool (add/remove/list/
+                    pause/resume), set_model, background_task
+  MEDIA             send_file
+  COLLAB            web_search, spawn_child, skill_tool
+  MEMORY            memory_search
+  SESSION           task_query/cancel/list
+
+
+【MCP Protocol（P6）】
+
+  支援 MCP（Model Context Protocol）工具擴展：
+
+  MCPBridge:          管理多個 MCP server 的生命週期
+  MCPStdioClient:     JSON-RPC over subprocess stdio
+  MCPSseClient:       JSON-RPC over HTTP SSE
+  discover_tools():   自動探索 server 工具 → ToolSpec（prefix: mcp__<server>__）
+  _build_handler():   工具名 → async handler（call server tool）
+
+  Config 格式：
+    {"name": "filesystem", "transport": "stdio", "command": "python", "args": ["server.py"]}
+    {"name": "github",     "transport": "sse",   "url": "http://localhost:8765/mcp"}
+
+
+【數據流完整路徑】
+
+  使用者訊息 → Transport (Discord/Telegram/Terminal)
+              → TransportAdapter.handle_message()
+              → CommandHandler.dispatch()        ← 攔截 /goal /cron
+              → Router.process()
+                → SystemPromptAssembler.build()   ← 5-layer prompt
+                → Memory context injection
+                → Provider chain (primary → fallback → tertiary)
+                → Tool execution (via CategoryRouter)
+                  → Advisor consultation (if uncertain result)
+                  → Skill lazy-load (via skill_tool)
+                → BudgetTracker.record()
+                → Response back to Transport
+
+  排程週期：
+    Scheduler._watcher()
+    → Scheduler._tick()
+    → Scheduler._dispatch(record)
+    → TransportAdapter.route_to_transport()
+
+
+【關鍵數字】
+
+                    v0.2         v0.4 (P6)
+  ───────────────────────────────────────────
+  原始碼行數         3,080        ~9,896
+  測試行數           ~1,500       ~10,688
+  測試文件           7            50
+  測試 assertions    702 assert   886 pytest
+  Provider           1 (OR)       3 chain + breaker
+  模組檔案           23           45+
+  零循環依賴         ✅          ✅
+  systemd 服務       ✅          ✅
+  config 集中         ❌           ✅（25 typed fields）
+  Circuit Breaker     ❌           ✅
+  Transport 抽象      ❌           ✅
+  背景任務            ❌           ✅
+  Budget Tracker      ❌           ✅（P4c）
+  /goal 系統          ❌           ✅（P4d-A）
+  /cron 系統          ❌           ✅（P4d-A + P7）
+  Advisor 模式        ❌           ✅（P4d-B）
+  Prompt 分層         ❌           ✅（P4a）
+  Skill 按需載入      ❌           ✅（P5a）
+  MCP Protocol        ❌           ✅（P6）
+  MessageBus          ❌           ✅
+
+
+【環境變數（.env）】
+
+  所有設定以 HAVEN_ 為前綴，由 main.py 統一載入。
+
+  HAVEN_OPENROUTER_KEY       OpenRouter API key（primary）
+  HAVEN_FALLBACK_KEY         OpenRouter fallback key
+  HAVEN_ARK_KEY              Ark tertiary key（seed-2-0-lite）
+  HAVEN_DISCORD_TOKEN        Discord bot token
+  HAVEN_TELEGRAM_TOKEN       Telegram bot token
+  HAVEN_HEARTBEAT_INTERVAL   心跳間隔（秒，default 30）
+  HAVEN_HEARTBEAT_THRESHOLD  故障判定次數（default 3）
+  HAVEN_NO_TERMINAL          禁用終端（1 = background mode）
+  HAVEN_OLLAMA_MODEL         本地視覺模型（default minicpm-v）
+
+
+【啟動流程】
+
+  main.py:
+    1. 載入 .env
+    2. 建立 Config（25 typed fields from env）
+    3. 建立 Provider chain（primary → fallback, circuit breaker）
+    4. 建立 CategoryRouter（vision provider: Ollama minicpm-v）
+    5. 建立 LongTermMemory + SkillStore
+    6. 建立 GoalManager + CommandHandler
+    7. 建立 SystemPromptAssembler（5層 + goal injection）
+    8. 建立 Router（所有元件注入）
+    9. Router.restore_tasks()（背景任務恢復）
+    10. command_handler.set_scheduler(router.scheduler)
+    11. router.start_scheduler()（排程引擎啟動）
+    12. 啟動 transports（Discord + Telegram + Terminal）
+    13. 啟動 HeartbeatMonitor
+
+
+【v0.4.1 修正（2026-06-11）】
+
+  Session 裁剪孤兒修復：
+    SessionStore._validate_tool_pairing() — save/load 時自動剔除
+    冇 matching assistant(tool_calls) 嘅孤兒 tool 訊息，防止
+    max_messages 裁剪後 DeepSeek reject HTTP 400。
+    → soul/memory/session_store.py
+
+  Discord DM reply 修復：
+    _send_text() / _send_file() 改用 get_channel() → fetch_channel()
+    fallback，解決 Haven 重啟後 DM channel 唔喺 bot cache 導致
+    reply 靜默丟棄嘅問題。
+    → transport/discord_bot.py
+
+  測試新增：
+    test_session_store.py（9 tests）— 覆蓋 trim / orphan guard / edge cases
+
+  關鍵數字微調：
+    測試文件 50 → 51
+    測試 assertions 886 → 895 pytest
+
+
+【文件歷史】
+
+  2025-05-20  v0.1  初版，基於 Seed 孵化
+  2026-06-08  v0.2  Discord Bot 部署，DeepSeek V4 Flash，systemd
+  2026-06-11  v0.4  P4-P6 roadmap 完成，架構重新疏理
+  2026-06-11  v0.4.1  Session 孤兒修復 + Discord DM reply 修復
+                      本文件為 v0.4 權威版本，不與舊版堆疊
