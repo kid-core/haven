@@ -53,7 +53,7 @@ def _handle_signal() -> None:
         _shutdown_event.set()
 
 
-LOCK_FILE = "/tmp/haven.lock"
+LOCK_FILE = "/mnt/z/Haven/haven.lock"
 _lock_fd = None  # kept alive for the process lifetime
 
 
