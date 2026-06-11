@@ -20,10 +20,11 @@ class TestCmdSafety:
 
     def _import_functions(self):
         """Import private functions from tools/cmd for isolated testing."""
-        from tools.cmd import DANGEROUS_COMMANDS, SHELL_METACHARS, _is_safe, _translate_path
+        from tools.cmd import DANGEROUS_COMMANDS, MODERATE_COMMANDS, SHELL_METACHARS, _is_safe, _translate_path
         self._is_safe = _is_safe
         self._translate_path = _translate_path
         self.DANGEROUS_COMMANDS = DANGEROUS_COMMANDS
+        self.MODERATE_COMMANDS = MODERATE_COMMANDS
         self.SHELL_METACHARS = SHELL_METACHARS
 
     # -- _is_safe tests ------------------------------------------------
@@ -39,12 +40,24 @@ class TestCmdSafety:
         self._import_functions()
         safe, _ = self._is_safe("ls -la /tmp")
         assert safe
+        safe, _ = self._is_safe("cat file.txt")
+        assert safe
+        safe, _ = self._is_safe("python --version")
+        assert safe
 
     def test_rejects_dangerous_command(self):
         self._import_functions()
         for bad in ["rm -rf /", "sudo echo hi", "mkfs.ext4 /dev/sda", "dd if=/dev/zero of=/dev/sda"]:
             safe, _ = self._is_safe(bad)
             assert not safe, f"Should reject: {bad}"
+
+    def test_allows_moderate_command(self):
+        """MODERATE_COMMANDS should be allowed (but warned at runtime)."""
+        self._import_functions()
+        for mod in self.MODERATE_COMMANDS:
+            cmd = f"{mod} --help"
+            safe, _ = self._is_safe(cmd)
+            assert safe, f"Should allow moderate command: {cmd}"
 
     def test_rejects_shell_metacharacters(self):
         self._import_functions()
@@ -74,6 +87,32 @@ class TestCmdSafety:
         self._import_functions()
         result = self._translate_path("/home/user/file.txt")
         assert result == "/home/user/file.txt"
+
+    def test_translate_mixed_paths_in_command(self):
+        """Mix of Linux args and Windows path in same command."""
+        self._import_functions()
+        result = self._translate_path("python Z:\\Haven\\script.py")
+        assert "/mnt/z/Haven/script.py" in result
+        assert result.startswith("python ")
+
+    def test_translate_standalone_backslash(self):
+        """Lone backslashes → forward slashes."""
+        self._import_functions()
+        result = self._translate_path("dir\\subdir")
+        assert "dir/subdir" in result
+
+    def test_translate_dotted_path(self):
+        """Paths with dots in directory names."""
+        self._import_functions()
+        result = self._translate_path(r"Z:\path.with.dots\file.txt")
+        assert "/mnt/z/path.with.dots/file.txt" in result
+
+    def test_translate_no_path_no_change(self):
+        """Commands without any path patterns stay unchanged."""
+        self._import_functions()
+        for cmd in ["ls", "git status", "echo hello"]:
+            result = self._translate_path(cmd)
+            assert result == cmd, f"No change expected: {cmd!r}"
 
     # -- execute_command integration -----------------------------------
 

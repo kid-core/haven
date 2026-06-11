@@ -23,5 +23,5 @@ class ToolSpec:
     description: str
     parameters: dict  # JSON Schema describing the arguments
     handler: Callable[..., Awaitable[Any]]
-    category: ToolCategory = ToolCategory.SYSTEM
+    category: ToolCategory = ToolCategory.ENV
     policy: ToolPolicy = field(default_factory=ToolPolicy)

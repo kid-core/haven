@@ -29,7 +29,7 @@ class EchoProvider:
 
 def _make_registry():
     reg = ToolRegistry()
-    reg.add(ToolSpec("cmd", "", {}, _echo, ToolCategory.SYSTEM,
+    reg.add(ToolSpec("cmd", "", {}, _echo, ToolCategory.ENV,
                      ToolPolicy(require_confirm=False)))
     return reg
 

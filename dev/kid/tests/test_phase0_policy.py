@@ -10,13 +10,12 @@ from core.tool_spec import ToolSpec
 class TestToolCategory:
     def test_all_categories_defined(self):
         names = {c.name for c in ToolCategory}
-        assert "FILES" in names
-        assert "SYSTEM" in names
-        assert "WEB" in names
-        assert "AI" in names
-        assert "COMMUNICATION" in names
+        assert "FILE" in names
+        assert "ENV" in names
+        assert "MEDIA" in names
+        assert "SESSION" in names
+        assert "COLLAB" in names
         assert "MEMORY" in names
-        assert "EXTERNAL" in names
 
     def test_default_policy(self):
         for cat in ToolCategory:
@@ -25,9 +24,9 @@ class TestToolCategory:
             assert p.enabled is True
 
     def test_category_defaults_sensible(self):
-        assert ToolCategory.SYSTEM.default_policy().require_confirm is True
-        assert ToolCategory.WEB.default_policy().require_confirm is False
-        assert ToolCategory.AI.default_policy().timeout == 60.0
+        assert ToolCategory.ENV.default_policy().require_confirm is True
+        assert ToolCategory.FILE.default_policy().require_confirm is True
+        assert ToolCategory.MEDIA.default_policy().timeout == 60.0
 
 
 class TestToolPolicy:
@@ -86,14 +85,14 @@ class TestToolRegistryPolicy:
 
     def test_confirm_required_detection(self):
         reg = ToolRegistry()
-        spec = ToolSpec("test", "", {}, self._echo, ToolCategory.SYSTEM,
+        spec = ToolSpec("test", "", {}, self._echo, ToolCategory.ENV,
                         ToolPolicy(require_confirm=True))
         reg.add(spec)
         assert reg.is_confirm_required("test") is True
 
     def test_disabled_tool_blocked(self):
         reg = ToolRegistry()
-        reg.add(ToolSpec("disabled", "", {}, self._echo, ToolCategory.FILES,
+        reg.add(ToolSpec("disabled", "", {}, self._echo, ToolCategory.FILE,
                          ToolPolicy(enabled=False)))
         ok, reason = reg.check_policy("disabled")
         assert ok is False
@@ -101,9 +100,9 @@ class TestToolRegistryPolicy:
 
     def test_openai_tools_excludes_disabled(self):
         reg = ToolRegistry()
-        reg.add(ToolSpec("a", "", {}, self._echo, ToolCategory.FILES,
+        reg.add(ToolSpec("a", "", {}, self._echo, ToolCategory.FILE,
                          ToolPolicy(enabled=True)))
-        reg.add(ToolSpec("b", "", {}, self._echo, ToolCategory.FILES,
+        reg.add(ToolSpec("b", "", {}, self._echo, ToolCategory.FILE,
                          ToolPolicy(enabled=False)))
         tools = reg.get_openai_tools()
         names = [t["function"]["name"] for t in tools]
@@ -115,7 +114,7 @@ class TestToolRegistryPolicy:
         reg = ToolRegistry()
         async def noop(**kw):
             return "ok"
-        reg.add(ToolSpec("rl", "", {}, noop, ToolCategory.FILES,
+        reg.add(ToolSpec("rl", "", {}, noop, ToolCategory.FILE,
                          ToolPolicy(rate_limit=10.0)))
         # First call passes
         await reg.execute("id1", "rl", {})

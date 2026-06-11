@@ -1,0 +1,85 @@
++--------------------------------------------------------------+
+| Haven P2+ 下一步流程                                         |
+| 日期: 2026-06-10                                             |
++--------------------------------------------------------------+
+
+一、項目一覽
+
+P2 (由優先次序表):
+  1. 記憶淘汰機制 - 低中影響, 低成本
+  2. Config 結構化 - 低影響, 中成本
+
+合理候選 (由 KID):
+  3. GMK 資源管理測試 - 中影響, 中成本
+  4. Error recovery - 中影響, 中成本
+  5. Skill 系統測試 - 中影響, 中成本
+  6. Integration 擴充 - 低影響, 低成本
+
+二、相依關係
+
+Config 結構化
+  +---> Skill 系統測試
+  +---> 記憶淘汰機制 ---> GMK 資源管理測試
+  +---> Integration 擴充
+
+Error recovery ---> 獨立, 無相依
+
+三、Iteration 1 (約 2 節)
+
+A: Config 結構化
+  建立 core/config.py, typed dataclass
+  掃描全 project 所有 os.getenv / os.environ
+  更新 main.py 改用 config
+  寫 test_config.py
+  [HITL] Review naming + default values
+
+B: 記憶淘汰機制
+  LRU vs TTL vs importance-based 擇一
+  實作 LongTermMemory eviction
+  寫 test_memory_eviction.py
+  [HITL] Review strategy
+
+四、Iteration 2 (約 2 節)
+
+C: GMK 資源管理測試
+  擴充 ResourceMonitor test
+  RAM pressure scenarios (70%/85%/95%)
+  模擬 crash + recovery 情景
+
+D: Error recovery / graceful degradation
+  All providers down 情景
+  Disk full / rate limit recovery
+  寫 test_error_recovery.py
+
+五、Iteration 3 (約 2 節)
+
+E: Skill 系統測試
+  SkillStore lifecycle
+  Skill injection pipeline
+  用 tmp_path + fake CategoryRouter
+  寫 test_skill_store.py
+
+F: Integration 擴充
+  更多 real provider test
+  Transport e2e (Discord/Telegram)
+  全部 @pytest.mark.integration
+
+六、已知風險
+
+1. Config refactoring
+   main.py 有約 40 處 inline os.getenv
+   漏一個就出事
+2. 記憶淘汰
+   LTM 目前無限增長
+   eviction 可能影響現有用戶
+3. GMK RAM 測試
+   WSL2 上行為可能同 dev 唔同
+   測試一定要 mock-based
+4. Skill injection
+   Skills 係 .py 動態載入
+   測試用 tmp_path, 唔好碰 real dir
+
+七、測試基線
+
+目前: 534 passed, 4 skipped, 0 failed
+目標全部完成後: +60-80 tests

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from core.categories import ToolCategory
 from core.policy import ToolPolicy
+from core.resource_gate import resource_gate
 from core.tool_decorator import tool
 
 if TYPE_CHECKING:
@@ -29,21 +30,27 @@ def set_spawn_manager(mgr: SpawnManager) -> None:
 
 @tool(
     category=ToolCategory.MEMORY,
-    policy=ToolPolicy(timeout=65.0, rate_limit=30.0),
+    policy=ToolPolicy(timeout=300.0, rate_limit=30.0),
 )
-async def spawn_child(task: str, timeout: float = 60.0) -> str:
+@resource_gate(auto_estimate=True)
+async def spawn_child(
+    task: str,
+    timeout: float = 300.0,
+    max_turns: int = 10,
+) -> str:
     """Delegate a sub-task to an isolated child session.
 
-    Use this when a task can be handled independently without
-    polluting the main conversation context. The child runs in
-    its own session with limited turns and returns a single result.
+    The child runs its own ReAct loop with full tool access, limited turns,
+    and returns a single result.  Use for independent work that shouldn't
+    pollute the main conversation context.
 
-    Good for: summarization, code analysis, research lookups.
-    Bad for: multi-step interactive tasks, stateful operations.
+    Good for: summarization, code analysis, research, document updates.
+    Bad for: real-time interactive tasks.
 
     Args:
-        task:  The task description for the child session.
-        timeout: Max seconds to wait (10-120).
+        task:       The task description for the child session.
+        timeout:    Max seconds to wait (default 5 min, max 3600).
+        max_turns:  Max ReAct iterations for the child (default 10).
 
     Returns:
         The child's final response, or an error message.
@@ -51,5 +58,14 @@ async def spawn_child(task: str, timeout: float = 60.0) -> str:
     if _spawn_manager is None:
         return "[spawn error] Sub-task delegation not configured. SpawnManager not wired."
 
-    timeout = max(10.0, min(timeout, 120.0))
-    return await _spawn_manager.spawn(task, timeout=timeout)
+    if max_turns == 10:  # default → auto-estimate
+        from core.task_complexity import TaskComplexityEstimator
+
+        est = TaskComplexityEstimator()
+        max_turns = est.estimate_turns(task)
+        # Also adjust timeout: base 30s per turn + 60s buffer
+        timeout = max(timeout, max_turns * 30 + 60)
+
+    timeout = max(10.0, min(timeout, 3600.0))
+    max_turns = max(1, min(max_turns, 50))
+    return await _spawn_manager.spawn(task, timeout=timeout, max_turns=max_turns)

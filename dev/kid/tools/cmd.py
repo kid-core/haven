@@ -5,7 +5,8 @@ from core.categories import ToolCategory
 from core.policy import ToolPolicy
 from core.tool_decorator import tool
 
-DANGEROUS_COMMANDS = {"rm", "mv", "dd", "mkfs", "shutdown", "reboot", "sudo"}
+DANGEROUS_COMMANDS = {"rm", "mv", "dd", "mkfs", "sudo"}
+MODERATE_COMMANDS = {"kill", "pkill", "shutdown", "reboot", "systemctl", "service"}
 
 SHELL_METACHARS = frozenset(";|&`$()")
 
@@ -84,16 +85,22 @@ def _is_safe(cmd: str) -> tuple[bool, str]:
 
 
 @tool(
-    category=ToolCategory.SYSTEM,
-    policy=ToolPolicy(require_confirm=True, timeout=30.0, rate_limit=10.0),
+    category=ToolCategory.ENV,
+    policy=ToolPolicy(timeout=30.0, rate_limit=10.0),
 )
 async def execute_command(cmd: str) -> str:
-    """Run a shell command and return its output.
+    """Run a shell command and return its output (留意制 tiered safety).
+
+    留意制 tiers:
+        - 🟢 Auto: Most commands execute directly.
+        - 🟡 Warn: Moderated commands (kill, pkill, shutdown, reboot,
+          systemctl, service) execute but append a warning to output.
+        - 🔴 Block: Dangerous commands (rm, mv, dd, mkfs, sudo) are refused.
 
     Args:
-        cmd: The command to execute.  Paths like Z:\\dir are translated to /mnt/z/dir.
-             Shell metacharacters (; | & ` $ ( )) are rejected for safety.
-             Dangerous commands (rm, mv, dd, mkfs, shutdown, reboot, sudo) are blocked.
+        cmd: The command to execute.  On WSL2, Z:\\ paths are automatically
+             translated to /mnt/z/.  Shell metacharacters (; | & ` $ ( )) are
+             rejected for safety.
 
     Returns:
         Combined stdout and stderr, or an error message.
@@ -133,5 +140,12 @@ async def execute_command(cmd: str) -> str:
     err = stderr.decode("utf-8", errors="replace")
 
     if out and err:
-        return f"{out}\n{err}"
-    return out or err or "(no output)"
+        result = f"{out}\n{err}"
+    else:
+        result = out or err or "(no output)"
+
+    # Append moderated-command warning when applicable
+    if parts[0] in MODERATE_COMMANDS:
+        result += "\n⚠️  Moderated command executed — proceed with caution."
+
+    return result

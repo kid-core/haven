@@ -122,7 +122,7 @@ class TestSkillFactory:
             for i in range(5):
                 factory.observe(
                     "cmd", {"cmd": "ls"},
-                    ToolCategory.SYSTEM,  # pass enum, not string
+                    ToolCategory.ENV,  # pass enum, not string
                     True, f"s{i}",
                 )
             patterns = factory.detect_patterns()

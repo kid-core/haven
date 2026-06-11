@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 MIN_PATTERN_OCCURRENCES = 3
 
 # Tools / categories that are NEVER auto-learned
-BLOCKED_CATEGORIES = {ToolCategory.SYSTEM}
+BLOCKED_CATEGORIES = {ToolCategory.ENV}
 BLOCKED_TOOLS: set[str] = set()  # can add specific tool names
 
 # Sensitive content patterns that block skill generation

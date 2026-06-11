@@ -1,0 +1,177 @@
+┌─────────────────────────────────────────────────────────────┐
+│  Haven 改造路線圖：從 CC 設計逐步遷移                      │
+│  純文字手機版                                               │
+│  將 CC 核心設計系統性融入 Haven，確保每一步都穩定可回滾     │
+│  日期：2026-06-08                                           │
+└─────────────────────────────────────────────────────────────┘
+
+【前提原則】
+
+不中斷原則：
+每一步完成後，Haven 既有功能（mail.py、scan.py、sync）
+必須完全正常。新功能平行加入，不修改既有工具。
+
+回滾協定：
+每階段 checkpoint = git commit 或 tar.gz 備份 + 測試清單
++ 已知問題清單。回滾 = 還原到前一個 checkpoint。
+
+測試門檻（每階段通過才能繼續）：
+(1) 既有工具正常運作
+(2) 新功能基本可用
+(3) 無記憶體洩漏（free -m 前後差異 < 5%）
+
+
+====== Phase 0：地基（第 1-3 天）======
+
+0.1 目錄標準化
+
+建立 agent 目錄骨架，不影響既有檔案：
+
+/mnt/z/Haven/
+  ├── agent/
+  │   ├── core/         核心迴圈（未來）
+  │   ├── permissions/  權限系統（未來）
+  │   ├── tools/        工具實作（未來）
+  │   ├── compaction/   context 壓縮（未來）
+  │   ├── memory/       記憶系統（未來）
+  │   └── avatar/       系統狀態化身（未來）
+  ├── lib/
+  │   ├── logger.py
+  │   ├── config.py
+  │   └── circuit_breaker.py
+  └── tests/
+      ├── test_core.py
+      └── test_circuit_breaker.py
+
+既有檔案（mail.py、scan.py、Soul/ 等）完全不動。
+
+0.2 Circuit Breaker 共用模組
+
+CC 最大教訓：第一天就要有 circuit breaker，不等 BigQuery
+發現每天 25 萬次浪費才修。
+
+核心邏輯（當天可寫完）：
+
+class CircuitBreaker:
+    max_failures = 3
+    連續失敗達上限 → 停止重試
+    成功後 → 重置計數
+    支援命名（方便 crash log 追蹤）
+
+測試：
+- 連續 3 次失敗後 circuit 開啟
+- 成功後重置
+- 可被 mail.py 和 scan.py 匯入使用
+
+回滾：刪除 agent/ 和 lib/ 目錄即可
+
+
+====== Phase 1：核心迴圈（第 4-7 天）======
+
+1.1 Agent Core Loop（async generator 模式）
+
+class AgentLoop:
+    對應 CC query.ts 的 async generator pattern
+    每個 yield = CC 的 Continue Site
+
+    單輪迭代：
+    yield 'compacting'  → 壓縮（Phase 3 實作）
+    yield 'thinking'    → 模型呼叫
+    yield 'checking'    → 權限（Phase 2 實作）
+    yield 'executing'   → 工具執行
+    yield 'processing'  → 結果處理
+
+測試（不使用 LLM API，用 mock）：
+- 接受文字並回應
+- generator 可暫停 / 恢復
+- circuit breaker 正確運作
+
+1.2 整合現有工具
+
+將 mail.py 和 scan.py 包裝成 agent 可呼叫的工具：
+- 由 agent 呼叫時走 agent 流程
+- 直接執行 python mail.py 仍然可用
+- 既有 CLI 模式完全不受影響
+
+
+====== Phase 2：安全系統（第 8-11 天）======
+
+2.1 Permission Framework
+
+三層檢查，對應 CC：
+
+(1) 規則層 — alwaysAllow / alwaysDeny 硬規則（最快）
+(2) Hook 層 — 可程式化攔截
+(3) 預設拒絕 — default-deny
+
+DenialTracker（CC 46 行設計的直接翻譯）：
+- 連續 3 次拒絕 → 降級手動模式
+- 累計 20 次拒絕 → 降級手動模式
+
+測試：
+- 未註冊工具預設被拒絕
+- 3 次拒絕後降級
+
+
+====== Phase 3：效能系統（第 12-16 天）======
+
+3.1 Compaction Pipeline（三級簡化版 CC 五層）
+
+Level 1：Tool Result Budget — 截斷超大工具輸出
+Level 2：Microcompact — 選擇性清理
+Level 3：Summary — LLM 總結（最貴，最後才用）
+
+關鍵：Level 2 後如果已夠，Level 3 不觸發。
+取自 CC 源碼註釋「在 autocompact 之前先 collapse」。
+
+3.2 Circuit Breaker 整合入壓縮
+壓縮失敗超過 3 次 → 停止，記錄 crash log
+
+
+====== Phase 4：進階功能（第 17-23 天）======
+
+4.1 ToolSearch
+
+對應 CC 的 defer_loading pattern：
+- 工具標記 deferred=True 預設不可見
+- Agent 搜尋後按需載入
+- 節省預設 token 消耗
+
+4.2 Verification Agent
+
+CC 最被低估的設計。agent 不相信自己寫的程式碼，
+system prompt 包含合理化藉口清單：
+
+「程式碼看起來是對的」→ 讀不等於驗證，跑一次
+「測試已經過了」→ 實現者是 LLM，獨立驗證
+「大概沒問題」→ 大概不等於已驗證
+
+
+====== Phase 5：長期（第 24+ 天）======
+
+5.1 KAIROS 風格記憶系統
+三層閘門：時間 + session 數 + 檔案 lock
+Lock 的 mtime = 時間戳，PID 防重用，失敗 rollback
+
+5.2 系統狀態化身
+獨立目錄開發，不影響核心
+
+
+====== 完整路線圖 ======
+
+第 1-3 天  Phase 0 地基
+第 4-7 天  Phase 1 核心迴圈
+第 8-11 天 Phase 2 安全系統
+第 12-16 天 Phase 3 效能系統
+第 17-23 天 Phase 4 進階功能
+第 24+ 天  Phase 5 長期功能
+
+安全退出點：
+Phase 0 = 有 circuit breaker 的基礎庫
+Phase 1 = 最小可行 agent（MVP）
+Phase 2 = 安全的 agent
+Phase 3 = 長對話可靠的 agent
+Phase 4 = 接近 CC 水準的 agent
+Phase 5 = Haven 特色功能
+
+任何 phase 後喊停，系統都是可運行的。

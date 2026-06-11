@@ -50,7 +50,7 @@ class SpawnManager:
         self._nesting = nesting_level
         self._children: dict[str, ChildTask] = {}
 
-    async def spawn(self, task: str, timeout: float = DEFAULT_TIMEOUT) -> str:
+    async def spawn(self, task: str, timeout: float = DEFAULT_TIMEOUT, max_turns: int = 10) -> str:
         """Execute a sub-task in an isolated context and return the result.
 
         Parameters
@@ -59,6 +59,8 @@ class SpawnManager:
             The natural-language task description for the child session.
         timeout:
             Max seconds to wait for the child to complete.
+        max_turns:
+            Max ReAct iterations for the child loop.
 
         Returns
         -------
@@ -77,7 +79,10 @@ class SpawnManager:
             timeout=timeout,
         )
         self._children[task_id] = child
-        logger.info("Spawning child %s (level %d): %s", task_id, child.nesting_level, task[:80])
+        logger.info(
+            "Spawning child %s (level %d, max_turns=%d, timeout=%.0fs): %s",
+            task_id, child.nesting_level, max_turns, timeout, task[:80],
+        )
 
         try:
             child.status = "running"
@@ -85,7 +90,7 @@ class SpawnManager:
                 self._router.process(
                     user_message=task,
                     session_id=f"child:{task_id}",
-                    max_turns=5,  # children get fewer turns
+                    max_turns=max_turns,
                 ),
                 timeout=timeout,
             )

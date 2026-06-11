@@ -1,0 +1,473 @@
+┌─────────────────────────────────────────────────────────────┐
+│                  Haven Agent v0.2                           │
+│                  原型文件                                    │
+│                  已獨立上線 · Discord Bot · DeepSeek API    │
+│                  更新日期：2026-06-08                        │
+│                                                             │
+│  ⚠️ 此文件為 v0.2 歷史記錄，當前架構已有重大演進。          │
+│     完整 migration 記錄見「v0.3+ 演進」章節（文末）。        │
+└─────────────────────────────────────────────────────────────┘
+
+
+【什麼是 Haven】
+
+Haven 是 KID 的自主 agent 系統，運行於 GMK Mini PC（WSL2）。
+它是一個完全獨立的小型 agent 作業系統，不依賴任何外部平台。
+基於 Claude Code 源碼洩漏的六項設計模式，經過 702 項測試驗證。
+
+2026-06-08 晚間完成 Discord Bot 部署，正式獨立上線。
+
+
+【v0.2 更新內容】
+
+- 接入 DeepSeek v4 Flash API（透過 OpenRouter）
+- Discord Bot 獨立上線（systemd 長期背景服務）
+- 完全脫離 OpenClaw 模型層，具備獨立推理能力
+- 開機自動啟動，死機 10 秒自動重啟
+
+
+【六項核心設計來源】
+
+1. 權限框架（CC: yoloClassifier.ts + denialTracking.ts）
+   - 三層檢查鏈：規則 → Hook → 預設拒絕
+   - 拒絕追蹤：連續 3 次或累計 20 次拒絕 → 自動降級手動模式
+
+2. Session 管理（CC: query.ts async generator）
+   - Generator 模式，五階段 pipeline
+   - 七個 Continue Sites，原子狀態賦值
+   - 支援暫停/恢復，JSON 序列化
+
+3. 預算控制（CC: MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES）
+   - 三層預算：Task Budget + Max Turns + Circuit Breaker
+   - CC 教訓：每天浪費 25 萬次 API 呼叫，三行程式碼修復
+
+4. Context 壓縮管道（CC: 五層簡化為三層）
+   - Level 1: 截斷輸出（O(1)）→ Level 2: 選擇清理（O(n)）→ Level 3: LLM 摘要
+   - 斷路器保護：連續 3 次失敗停止壓縮
+
+5. ToolSearch 延遲工具載入（CC: defer_loading）
+   - 核心工具預設可見，延遲工具按需搜尋
+   - 已成業界標準（OpenAI SDK、ZeroClaw、CrewAI）
+
+6. 模組化架構（CC: 4600+ 檔案啟發）
+   - 零循環依賴，DAG 結構
+   - 每個子系統可獨立抽換，最多改 1 個檔案
+
+
+【原型架構】
+
+/mnt/z/Haven/
+│
+├── agent/
+│   ├── core/
+│   │   ├── loop.py         主迴圈（generator 5-stage）
+│   │   ├── model.py        LLM 介面（MockModel + DeepSeekModel）
+│   │   └── verification.py 獨立驗證 agent（AI 不相信 AI）
+│   │
+│   ├── permissions/
+│   │   ├── manager.py      三層權限檢查
+│   │   └── denial_tracker.py  拒絕追蹤器（CC 46 行設計）
+│   │
+│   ├── compaction/
+│   │   └── pipeline.py     三級壓縮管道（L1 → L2 → L3 + CB）
+│   │
+│   ├── tools/
+│   │   ├── mail_tool.py    Gmail 寄信
+│   │   ├── scan_tool.py    檔案掃描
+│   │   └── search.py       ToolSearch 延遲載入
+│   │
+│   ├── memory/
+│   │   └── kairos.py       KAIROS 記憶系統（3 層閘門）
+│   │
+│   └── avatar/
+│       ├── avatar.py       系統化身（5 數值 7 姿態）
+│       └── sprites.py      ASCII 精靈表
+│
+├── lib/
+│   ├── circuit_breaker.py  斷路器
+│   ├── config.py           設定管理
+│   └── logger.py           結構化日誌
+│
+├── haven.py                主入口（單次任務 / 狀態）
+│
+├── haven_discord.py        Discord Bot 入口（長期服務）
+├── haven-discord.service   systemd 服務設定
+│
+└── tests/                  7 個測試檔，702 assertions
+
+
+【處理流程】
+
+Discord 訊息
+  │
+  ▼
+┌──────────────────┐
+│ 1. 壓縮          │  ← 三級管道（截斷→選擇清理→摘要）
+│   Compacting     │     CB 保護，失敗 3 次停止
+└──────────────────┘
+  │
+  ▼
+┌──────────────────┐
+│ 2. 思考          │  ← DeepSeek v4 Flash API 推理
+│   Thinking       │     決定工具與參數
+└──────────────────┘
+  │
+  ▼
+┌──────────────────┐
+│ 3. 檢查          │  ← 三層權限（規則→Hook→預設拒絕）
+│   Checking       │     拒絕 3 次自動降級
+└──────────────────┘
+  │
+  ▼
+┌──────────────────┐
+│ 4. 執行          │  ← 斷路器保護，失敗記錄 crash log
+│   Executing      │     工具包裝不修改原始程式
+└──────────────────┘
+  │
+  ▼
+┌──────────────────┐
+│ 5. 處理          │  ← 整合結果 + 驗證 agent 二次檢查
+│   Processing     │     AI 不相信 AI：獨立測試 > 讀碼
+└──────────────────┘
+  │
+  ▼
+Discord 回覆
+
+
+【部署架構】
+
+OpenRouter API (DeepSeek v4 Flash)
+  ↑
+  │ HTTPS
+  │
+Haven Discord Bot (systemd 長期服務)
+  ├── haven_discord.py
+  ├── AgentLoop (generator 5-stage)
+  ├── DeepSeekModel (urllib, 無外部依賴)
+  └── tools (mail / scan / ToolSearch)
+  ↑
+  │ Discord WebSocket
+  │
+Discord 使用者
+
+
+【KAIROS 記憶系統】
+
+三層閘門（便宜先檢查）：
+1. 時間閘 — 距上次記憶鞏固 ≥ 24 小時
+2. Session 閘 — 累積 ≥ 5 個新 session
+3. Lock 閘 — 取得檔案 advisory lock
+
+Lock 設計（對應 CC consolidationLock.ts）：
+- mtime = lastConsolidatedAt
+- body = 持有者 PID
+- 1 小時過期（PID 重用防護）
+- mtime 不回寫 = 天然 rollback
+
+
+【系統化身】
+
+CC BUDDY pet 重新構想 —— 系統健康指標。
+
+五項數值對應真實系統狀態：
+除錯（debugging）· 耐心（patience）· 混亂（chaos）
+智慧（wisdom）· 警戒（snark）
+
+七種姿態：zZ 睡眠 / ^_^ 安穩 / ^o^ 活躍 /
+          >_< 緊張 / @_@ 警戒 / .o. 孵化 / ~u~ 做夢
+
+夜間自動睡眠（23:00-08:00），除非警戒。
+
+
+【關鍵數字】
+
+702 項自動化測試，零失敗
+23 個原始碼檔案，3080 行
+零循環依賴（全 DAG 依賴圖）
+模組間抽換成本：最多改 1 個檔案
+審查評分：統一 8/10 · 精簡 7/10 · 耦合 8/10
+記憶體使用：~30MB（極度 GMK 友善）
+
+
+【啟動與監控】
+
+# 啟動
+systemctl --user start haven-discord.service
+
+# 狀態
+systemctl --user status haven-discord.service
+
+# 日誌
+journalctl --user -u haven-discord.service -f
+
+# 單次任務（CLI）
+python3 /mnt/z/Haven/haven.py --message "掃描檔案"
+
+# 系統狀態
+python3 /mnt/z/Haven/haven.py --status
+
+
+
+┌─────────────────────────────────────────────────────────────┐
+│   v0.3+ 演進（2026-06-10 更新）                            │
+│   自 v0.2 以來的架構變更                                    │
+└─────────────────────────────────────────────────────────────┘
+
+
+【v0.2 → v0.3+ 核心變更】
+
+2026-05-29 起，Haven 經歷全面重構，從原型架構演進為
+獨立 agent 系統（dev/kid/）。
+
+
+【架構重構】
+
+generator 5-stage loop → Router (ReAct loop) + ToolRegistry
+agent/core/ → dev/kid/core/
+  - loop.py（退休）  → router.py（狀態機，支援 provider chain fallback）
+  - model.py（退休） → base_provider.py + http_provider.py（抽象 LLM 介面）
+  - verification.py（退休） → 測試層取代
+
+新加入的子系統：
+  + resource_gate.py（RAM/disk 壓力檢查 + 自動 chunking）
+  + task_manager.py（背景任務生命週期管理）
+  + scheduler.py（at/every/cron 排程）
+  + message_bus.py（跨任務訊息佇列，priority 支援）
+  + category_router.py（INLINE/AI_PROXY/EXTERNAL 路由）
+  + crash_journal.py（原子寫入 crash 日誌）
+  + tool_decorator.py（@tool 裝飾器 + 自動 schema 生成）
+  + tool_spec.py + tool_registry.py（工具規格與註冊）
+
+
+deepseek_model.py（退休）→ http_provider.py + openclaw:
+  - 多 provider chain：DeepSeek v4 Pro → OpenRouter Gemma → Ark
+  - 自動 fallback（primary timeout → secondary）
+  - 完整 provider abstraction（add/remove/temperature/max_tokens）
+
+
+permissions/（退休）→ policy.py + tool_decorator:
+  - 3 層權限 → ToolPolicy dataclass（enabled/require_confirm/rate_limit/timeout）
+  - ToolProfile（safe/coding profiles）
+  - RateLimitTracker（per-tool rate limit）
+
+
+compaction/ pipeline（退休）→ 整合入 resource_gate.py:
+  - Context 壓縮由 Router 的 SystemPromptBuilder 管理
+  - RAM/Disk 壓力檢查取代舊的 compaction stage
+
+
+memory/（退休）→ soul/memory/ + long_term_memory/:
+  - KAIROS 3 層閘門 → LongTermMemory（tagged entries + 持久化搜尋）
+  - SessionStore（session 持久化 + restore）
+  - crash_journal.py（崩潰記錄 + recover）
+
+
+avatar/（退休）→ 系統化身功能移至 OpenClaw 和 SOUL.md:
+  - 7 種姿態 → IDENTITY.md 人格設定
+
+
+【模型系統】
+
+v0.2: DeepSeek v4 Flash via OpenRouter only
+v0.3+: DeepSeek v4 Pro primary + OpenRouter Gemma fallback
+       + Ark seed-2-0-lite/seed-2-0-pro tertiary
+       + 完整 provider fallback chain
+
+
+【測試系統】
+
+v0.2: 702 項 global-counter assertions，7 個測試檔
+      引用舊 module path（agent.core.loop），無法執行
+
+v0.3+: 475 pytest tests，0 failed
+       34 個測試檔，全覆蓋
+       三層測試金字塔：
+         Unit（純邏輯）    80+
+         Component（行為） 30+
+         Integration（API）5（skip-in-CI）
+       FakeProvider 狀態機取代 MockModel keyword match
+       安全測試、持久化測試、transport 測試
+
+舊測試已歸檔至 tests/retired/。
+
+
+【文件結構】
+
+v0.2: 根目錄 28 個散落檔案 + 文件
+v0.3+: 根目錄縮減至 12 個系統必需檔
+       doc/ 統一文件倉：manual/technical/plans/history
+       reports/ 技術報告
+
+
+【Provider Chain】
+
+Primary:  DeepSeek v4 Pro（HAVEN_PRIMARY_MODEL）
+Fallback:  OpenRouter Gemma 4（HAVEN_FALLBACK_MODEL）
+Tertiary:  Ark seed-2-0-lite（HAVEN_TERTIARY_MODEL）
+
+Env 設定：
+  HAVEN_PRIMARY_MODEL=deepseek-v4-pro
+  DEEPSEEK_API_KEY=sk-...
+  OPENROUTER_API_KEY=sk-or-...
+  ARK_API_KEY=ark-...
+  ARK_BASE_URL=https://ark.ap-southeast.bytepluses.com/api/v3
+
+
+【啟動方式】
+
+v0.2: python3 haven_discord.py 或 python3 haven.py
+v0.3+: python3 dev/kid/main.py（統一個人入口）
+
+新 service：dev/kid/ 下的 main.py 統一啟動
+
+
+【環境變數】
+
+新增：
+  HAVEN_PRIMARY_MODEL
+  HAVEN_FALLBACK_MODEL
+  HAVEN_TERTIARY_MODEL
+  HAVEN_DISCORD_TOKEN（取代 DISCORD_TOKEN）
+  HAVEN_TELEGRAM_TOKEN
+  ARK_API_KEY
+
+退休：
+  HAVEN_MODEL（deepseek/mock）→ provider chain 取代
+
+
+【關鍵數字對比】
+
+                 v0.2              v0.3+
+  ─────────────────────────────────────
+  原始碼行數       3,080              ~8,500
+  測試文件         7                  34
+  測試           702 assertions      475 pytest tests
+  測試框架        global counter      pytest + FakeProvider
+  Provider        1（OpenRouter）    3（DS+OR+Ark fallback）
+  架構檔         23                  50+
+  零循環依賴      ✅                 ✅
+  systemd服務     ✅                 ✅
+
+
+【文件歷史】
+
+v0.2 原型：2026-06-08 — 首次獨立上線
+v0.3+ 演進：2026-06-10 — 重構完成記錄
+
+v0.4+ 演進：2026-06-10 — 完整測試體系 + 架構加固
+
+
+【v0.4+ 更新內容 — 架構加固與測試擴充】
+
+本階段以「測試驅動 + 架構加固」為核心，Phase 0-7 建立
+完整測試基建（pytest + FakeProvider），
+P0-P3 補齊架構層安全、可觀測性、抽象化、容錯機制。
+
+
+【v0.4 新增核心元件】
+
+  core/config.py           中央化 typed 配置（取代散落 os.getenv）
+  core/circuit_breaker.py  提供者斷路器（3 fail → OPEN → 30s HALF_OPEN）
+  core/tracer.py           每 session trace_id + span timing + log summary
+  transport/adapter.py     TransportAdapter 抽象基底（五個 primitive）
+
+  ── 定義檔 ──
+
+  core/tool_spec.py        ToolSpec + ToolPolicy dataclass
+  core/policy.py           RateLimitTracker, ToolProfile, SAFE/CODING/READONLY
+
+  ── 事件系統 ──
+
+  core/message_bus.py      跨任務訊息佇列（priority + FIFO + mailbox cap）
+  core/background_agent.py 自主背景任務 ReAct 循環
+
+
+【Provider Chain 最終結構】
+
+  ┌─ Primary:  DeepSeek v4 Flash (via DeepSeek API)
+  ├─ Fallback: Gemma 4 26B (via OpenRouter)
+  └─ Tertiary: Seed 2.0 Lite (via Ark)
+
+  Circuit breaker per provider：
+    3 次連續失敗 → OPEN（跳過），30s 後 → HALF_OPEN（試一次）
+    成功 → CLOSED，失敗 → OPEN
+
+
+【Transport 層最終結構】
+
+  ┌─ TransportAdapter（抽象基底）
+  │   ├─ _send_text(channel_id, text)
+  │   ├─ _send_file(channel_id, path, name)
+  │   ├─ _extract_user_id(msg)
+  │   ├─ _extract_text(msg)
+  │   └─ _extract_channel_id(msg)
+  │
+  ├─ DiscordAdapter → DiscordBot（via discord.py）
+  │
+  └─ TelegramAdapter → run_telegram（via python-telegram-bot）
+
+  共享 pipeline：whitelist → mention strip → router.process → file delivery
+
+
+【Config 結構化 — 環境變數變動】
+
+  新增 typed fields（core/config.py）：
+    primary_model, fallback_model, tertiary_model, embed_model
+    no_terminal, use_vector, allowed_prefix
+    ollama_base_url, heartbeat_url
+    heartbeat_interval, heartbeat_threshold
+    heartbeat_discord_channel, heartbeat_discord_user
+    heartbeat_telegram_chat
+    memory_max_entries, memory_eviction_ttl_days, memory_eviction_batch
+
+  API keys stay in .env（12-factor 原則）：
+    DEEPSEEK_API_KEY, OPENROUTER_API_KEY, ARK_API_KEY
+    HAVEN_DISCORD_TOKEN（fallback: DISCORD_TOKEN）
+    HAVEN_TELEGRAM_TOKEN（fallback: TELEGRAM_TOKEN）
+
+  Removed inline os.getenv 從 10 個 modules → 統一 config singleton
+
+
+【記憶淘汰機制】
+
+  LongTermMemory.evict() 雙策略：
+    1. TTL：30 日未存取 → 刪除（config.memory_eviction_ttl_days）
+    2. LRU：超過 1000 條 → keep 最新（config.memory_max_entries）
+    自動觸發：add() 後自動 evict
+
+
+【FakeProvider 測試基建】
+
+  FakeProvider 特性：
+    - 可預設 response 序列（ProviderResponse list）
+    - 每 call 順序彈出下一個 response
+    - call_count 記錄調用次數
+    - 支援 tool_calls（模擬 LLM 工具選擇）
+    - 可嵌入 circuit breaker + tracer 場景
+
+  FailingProvider：每次呼叫拋出例外，測試 fallback chain
+
+
+【關鍵數字對比】
+
+                v0.2       v0.3+       v0.4+
+  ────────────────────────────────────────────────
+  原始碼行數     3,080      ~8,500      ~12,000
+  測試文件       7          34          50+
+  測試          702 assert  475 pytest  724 pytest
+  Provider      1（OR）    3（chain）  3 + circuit breaker
+  架構檔         23         50+         60+
+  零循環依賴     ✅        ✅         ✅
+  systemd服務    ✅        ✅         ✅
+  config 集中    ❌         ❌         ✅（25 typed fields）
+  斷路器         ❌         ❌         ✅
+  傳輸抽象       ❌         ❌         ✅
+  背景任務       ❌         ❌         ✅
+  MessageBus     ❌         ❌         ✅
+
+
+【文件歷史】
+
+v0.2 原型：2026-06-08 — 首次獨立上線
+v0.3+ 演進：2026-06-10 — 重構完成記錄
+v0.4+ 演進：2026-06-10 — 完整測試體系 + 架構加固

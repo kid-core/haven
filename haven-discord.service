@@ -1,0 +1,19 @@
+[Unit]
+Description=Haven Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/z/Haven
+ExecStart=/mnt/z/Haven/.venv/bin/python3 /mnt/z/Haven/haven_discord.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+# 安全限制
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

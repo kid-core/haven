@@ -1,4 +1,13 @@
-"""Tool category definitions for Phase 0 policy layer."""
+"""P4b — Tool category definitions with simplified grouping.
+
+Categories are aligned with the P4b reorg:
+  FILE    — filesystem tools (read, write, edit)
+  ENV     — environment tools (bash, search, fetch, ollama)
+  MEDIA   — media generation (image, music, video)
+  SESSION — session interaction (ask_user, plan_mode, todo_write)
+  COLLAB  — collaboration tools (sub_agent, MCP, messaging)
+  MEMORY  — memory operations (memory_search, memory_write)
+"""
 
 from __future__ import annotations
 
@@ -16,30 +25,23 @@ class ToolCategory(Enum):
     enabling per-category rate limits, routing decisions, and profiles.
     """
 
-    FILES = auto()          # read, write, edit
-    SYSTEM = auto()         # cmd, process
-    WEB = auto()            # search, fetch
-    AI = auto()             # image, music, video generation
-    COMMUNICATION = auto()  # message, notification
-    MEMORY = auto()         # memory operations
-    EXTERNAL = auto()       # MCP tools, third-party integrations
+    FILE = auto()       # read, write, edit, send_file
+    ENV = auto()        # bash, search, fetch, ollama, set_model
+    MEDIA = auto()      # image, music, video generation
+    SESSION = auto()    # ask_user, plan_mode, todo_write (reserved)
+    COLLAB = auto()     # sub_agent, MCP, messaging, notifications
+    MEMORY = auto()     # memory operations
 
     def default_policy(self) -> ToolPolicy:
-        """Return the recommended ToolPolicy for this category.
-
-        Used as a sensible default when registering new tools.
-        Tool authors can override via @tool(policy=...).
-        """
-        # Lazy import to avoid circular deps at module level
+        """Return the recommended ToolPolicy for this category."""
         from .policy import ToolPolicy
 
         _defaults = {
-            ToolCategory.FILES:         ToolPolicy(require_confirm=True, timeout=10.0, rate_limit=2.0),
-            ToolCategory.SYSTEM:        ToolPolicy(require_confirm=True, timeout=30.0, rate_limit=10.0),
-            ToolCategory.WEB:           ToolPolicy(timeout=15.0, rate_limit=5.0),
-            ToolCategory.AI:            ToolPolicy(timeout=60.0, rate_limit=30.0),
-            ToolCategory.COMMUNICATION: ToolPolicy(require_confirm=True, timeout=20.0, rate_limit=5.0),
-            ToolCategory.MEMORY:        ToolPolicy(timeout=10.0, rate_limit=2.0),
-            ToolCategory.EXTERNAL:      ToolPolicy(require_confirm=True, timeout=30.0, rate_limit=10.0),
+            ToolCategory.FILE:     ToolPolicy(require_confirm=True, timeout=10.0, rate_limit=2.0),
+            ToolCategory.ENV:      ToolPolicy(require_confirm=True, timeout=30.0, rate_limit=10.0),
+            ToolCategory.MEDIA:    ToolPolicy(timeout=60.0, rate_limit=30.0),
+            ToolCategory.SESSION:  ToolPolicy(require_confirm=True, timeout=30.0, rate_limit=10.0),
+            ToolCategory.COLLAB:   ToolPolicy(require_confirm=True, timeout=30.0, rate_limit=10.0),
+            ToolCategory.MEMORY:   ToolPolicy(timeout=10.0, rate_limit=2.0),
         }
         return _defaults.get(self, ToolPolicy())

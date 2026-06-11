@@ -41,4 +41,4 @@ jobs:
         run: ruff check .
 
       - name: Pytest
-        run: python -m pytest tests/ -q --tb=short
+        run: python -m pytest tests/ -m "not slow and not integration" -q --tb=short

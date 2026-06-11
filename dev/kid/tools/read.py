@@ -3,6 +3,7 @@ import os
 from core.categories import ToolCategory
 from core.policy import ToolPolicy
 from core.tool_decorator import tool
+from core.config import config  # noqa: E402
 
 # Common binary file extensions / magic checks
 # We use a heuristic: read the first 8 KB and check for null bytes.
@@ -10,8 +11,14 @@ _READ_CHUNK = 8192
 
 
 def _allowed_prefix() -> str:
-    """Return the allowed path prefix (overridable via env for CI)."""
-    return os.getenv("HAVEN_ALLOWED_PREFIX", "/mnt/z/")
+    """Return the allowed path prefix (overridable via env for CI).
+
+    Default: ``HAVEN_ROOT/..``, which on WSL2 is ``/mnt/z/`` (full drive)
+            and on Orange Pi is ``/opt/`` (sensible sandbox).
+    """
+    from core.paths import haven_dir
+    root_parent = str(haven_dir().parent) + "/"
+    return config.allowed_prefix or root_parent
 
 
 def _is_binary(filepath: str) -> bool:
@@ -25,14 +32,15 @@ def _is_binary(filepath: str) -> bool:
 
 
 @tool(
-    category=ToolCategory.FILES,
+    category=ToolCategory.FILE,
     policy=ToolPolicy(timeout=10.0, rate_limit=2.0),
 )
 async def read_file(path: str) -> str:
     """Read the contents of a file.
 
     Args:
-        path: Absolute or relative path to read. Must resolve under /mnt/z/.
+        path: Absolute or relative path to read. Must resolve under the
+             allowed prefix (``HAVEN_ALLOWED_PREFIX`` or ``HAVEN_ROOT/..``).
 
     Returns:
         The file contents as a string, or an error message.
@@ -41,7 +49,7 @@ async def read_file(path: str) -> str:
     # Resolve to absolute path
     resolved = os.path.realpath(os.path.abspath(path))
 
-    # Must be under /mnt/z/
+    # Must be under the allowed prefix
     prefix = _allowed_prefix()
     if not resolved.startswith(prefix):
         return f"[error] Path must be under {prefix.strip('/')}/.  Got: {resolved}"

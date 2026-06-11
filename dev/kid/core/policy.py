@@ -42,11 +42,14 @@ class RateLimitTracker:
 
     _last_called: dict[str, float] = field(default_factory=dict)
 
-    def check(self, name: str, rate_limit: float) -> tuple[bool, float]:
+    def check(self, name: str, rate_limit: float | None) -> tuple[bool, float]:
         """Check if *name* can execute given *rate_limit* seconds between calls.
 
+        ``rate_limit=None`` or ``0.0`` means no rate limit.
         Returns (allowed, wait_seconds).
         """
+        if not rate_limit:
+            return True, 0.0
         now = time.monotonic()
         last = self._last_called.get(name, 0.0)
         elapsed = now - last

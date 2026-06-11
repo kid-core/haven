@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import logging
 import math
-import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from soul.memory.long_term import MemoryEntry
 
 logger = logging.getLogger(__name__)
+
+from core.config import config  # noqa: E402
 
 
 class VectorIndex:
@@ -33,9 +34,6 @@ class VectorIndex:
     when ollama is detected at ``OLLAMA_BASE_URL`` (defaults to
     http://localhost:11434).
     """
-
-    OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    EMBED_MODEL = os.getenv("HAVEN_EMBED_MODEL", "nomic-embed-text:latest")
 
     def __init__(
         self,
@@ -107,7 +105,7 @@ class VectorIndex:
         """Lazy-detect ollama availability."""
         if self._available is not None:
             return self._available
-        if os.getenv("HAVEN_USE_VECTOR", "").lower() in ("true", "1", "yes"):
+        if config.use_vector:
             # User explicitly enabled, try to connect
             self._available = await self._ping()
         else:
@@ -121,7 +119,7 @@ class VectorIndex:
         try:
             import httpx
             async with httpx.AsyncClient(timeout=3.0) as client:
-                resp = await client.get(f"{self.OLLAMA_URL}/api/tags")
+                resp = await client.get(f"{config.ollama_base_url}/api/tags")
                 return resp.status_code == 200
         except Exception:
             return False
@@ -134,8 +132,8 @@ class VectorIndex:
             import httpx
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
-                    f"{self.OLLAMA_URL}/api/embeddings",
-                    json={"model": self.EMBED_MODEL, "prompt": text[:1000]},
+                    f"{config.ollama_base_url}/api/embeddings",
+                    json={"model": config.embed_model, "prompt": text[:1000]},
                 )
                 if resp.status_code != 200:
                     return None

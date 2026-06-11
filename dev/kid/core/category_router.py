@@ -55,40 +55,35 @@ class CategoryRule:
 # ---------------------------------------------------------------------------
 
 DEFAULT_RULES: dict[ToolCategory, CategoryRule] = {
-    # Files  → inline handler, no LLM needed
-    ToolCategory.FILES: CategoryRule(
+    # File → inline handler, no LLM needed
+    ToolCategory.FILE: CategoryRule(
         mode=ExecutionMode.INLINE,
         supports_fallback=False,
     ),
-    # System (cmd) → inline handler, no LLM needed
-    ToolCategory.SYSTEM: CategoryRule(
+    # Env (bash, search, fetch, ollama) → inline handler
+    ToolCategory.ENV: CategoryRule(
         mode=ExecutionMode.INLINE,
         supports_fallback=False,
     ),
-    # Web → inline (Tavily handled inside the tool handler itself)
-    ToolCategory.WEB: CategoryRule(
-        mode=ExecutionMode.INLINE,
-        supports_fallback=False,
-    ),
-    # AI → proxy through an AI provider (vision models, etc.)
-    ToolCategory.AI: CategoryRule(
+    # Media → proxy through an AI provider (vision models, etc.)
+    ToolCategory.MEDIA: CategoryRule(
         mode=ExecutionMode.AI_PROXY,
         provider_role="default",
         supports_fallback=True,
     ),
-    # Communication → inline
-    ToolCategory.COMMUNICATION: CategoryRule(
+    # Session → inline handler (reserved for ask_user, plan_mode)
+    ToolCategory.SESSION: CategoryRule(
         mode=ExecutionMode.INLINE,
+        supports_fallback=False,
+    ),
+    # Collab → external delegate (sub_agent, MCP, messaging)
+    ToolCategory.COLLAB: CategoryRule(
+        mode=ExecutionMode.EXTERNAL,
         supports_fallback=False,
     ),
     # Memory → inline handler
     ToolCategory.MEMORY: CategoryRule(
         mode=ExecutionMode.INLINE,
-        supports_fallback=False,
-    ),
-    # External (MCP) → external delegate
-    ToolCategory.EXTERNAL: CategoryRule(
-        mode=ExecutionMode.EXTERNAL,
         supports_fallback=False,
     ),
 }

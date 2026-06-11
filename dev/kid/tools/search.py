@@ -13,7 +13,7 @@ TAVILY_URL = "https://api.tavily.com/search"
 
 
 @tool(
-    category=ToolCategory.WEB,
+    category=ToolCategory.ENV,
     policy=ToolPolicy(timeout=15.0, rate_limit=5.0),
 )
 async def web_search(query: str, max_results: int = 5) -> str:

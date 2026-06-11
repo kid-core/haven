@@ -1,0 +1,41 @@
+#!/bin/bash
+# haven-trash — Haven 專用垃圾桶工具
+# 用法: haven-trash <檔案或目錄...>
+# 將檔案移入 Haven 垃圾桶，並記錄 manifest
+
+set -euo pipefail
+
+TRASH_BASE="/mnt/z/Trash/Haven"
+
+for item in "$@"; do
+  [ -e "$item" ] || { echo "❌ 不存在: $item"; continue; }
+
+  real="$(realpath "$item")"
+
+  # 安全檢查：只能在 /mnt/z/Haven/ 範圍內
+  if [[ "$real" != /mnt/z/Haven/* ]]; then
+    echo "❌ 只能丟 Haven 範圍內的檔案: $real"
+    continue
+  fi
+
+  ts="$(date '+%Y-%m-%d_%H%M%S')"
+  safe_name="$(echo "$real" | sed 's|^/mnt/z/Haven/||; s|/|_|g')"
+  target_name="${ts}_${safe_name}"
+
+  items_dir="$TRASH_BASE/items"
+  manifest="$TRASH_BASE/manifest.csv"
+
+  if [ -d "$real" ]; then
+    mv "$real" "$items_dir/$target_name"
+    item_type="dir"
+  else
+    mv "$real" "$items_dir/$target_name"
+    item_type="file"
+  fi
+
+  size="$(du -sk "$items_dir/$target_name" 2>/dev/null | cut -f1)"
+  echo "${ts},${item_type},${real},${size}K" >> "$manifest"
+
+  echo "✅ 已丟入 [Haven] 垃圾桶: $real"
+  echo "   回收站: $items_dir/$target_name"
+done

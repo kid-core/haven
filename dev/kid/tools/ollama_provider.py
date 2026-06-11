@@ -17,8 +17,9 @@ if TYPE_CHECKING:
     from core.http_provider import HttpProvider
 
 logger = logging.getLogger(__name__)
+from core.config import config  # noqa: E402
 
-OLLAMA_BASE = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
 
 
 # ---------------------------------------------------------------------------
@@ -46,7 +47,7 @@ class OllamaEmbedding:
         try:
             import httpx
             async with httpx.AsyncClient(timeout=3.0) as client:
-                resp = await client.get(f"{OLLAMA_BASE}/api/tags")
+                resp = await client.get(f"{config.ollama_base_url}/api/tags")
                 self._available = resp.status_code == 200
         except Exception:
             self._available = False
@@ -62,7 +63,7 @@ class OllamaEmbedding:
             import httpx
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
-                    f"{OLLAMA_BASE}/api/embeddings",
+                    f"{config.ollama_base_url}/api/embeddings",
                     json={"model": self.model, "prompt": text[:1000]},
                 )
                 if resp.status_code != 200:
@@ -106,7 +107,7 @@ def create_ollama_provider(
         return HttpProvider(
             name=name,
             model=model,
-            base_url=f"{OLLAMA_BASE}/v1/chat/completions",
+            base_url=f"{config.ollama_base_url}/v1/chat/completions",
             api_key_env="OLLAMA_API_KEY",
             timeout=120.0,
             default_temperature=0.7,

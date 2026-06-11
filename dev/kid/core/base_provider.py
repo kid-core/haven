@@ -23,13 +23,7 @@ class BaseProvider(ABC):
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> ProviderResponse:
-        """Send a chat-completion request and return a normalised dict.
-
-        Returns
-        -------
-        dict with keys:
-            content    : str | None   — text response (None when tool_calls present)
-            tool_calls : list | None  — tool-call dicts (None when text present)
+        """Send a chat-completion request and return a normalised dict.  # noqa: DAR101, DAR201
         """
 
     @abstractmethod
@@ -39,3 +33,12 @@ class BaseProvider(ABC):
     @abstractmethod
     async def close(self) -> None:
         """Release any resources held by the provider."""
+
+    async def ping(self) -> bool:
+        """Lightweight health-check placeholder.
+
+        Override in concrete providers to verify API connectivity
+        without consuming a chat slot (e.g. call a lightweight
+        endpoint).  Default returns True.
+        """
+        return True

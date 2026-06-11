@@ -1,0 +1,91 @@
+┌─────────────────────────────────────────────────────────────┐
+│                  Haven Agent v1.0                           │
+│                  使用說明                                    │
+│                  編寫日期：2026-06-09                        │
+└─────────────────────────────────────────────────────────────┘
+
+【系統概要】
+Haven 係一個獨立運作嘅 AI 助手系統，唔依賴 OpenClaw。
+支援 Discord 同 Telegram 雙平台，DeepSeek 原生 API 做主力，
+OpenRouter 做備援。
+
+【連結方式】
+
+  Discord:
+    名稱：Haven#5402
+    DM：直接訊息 Haven#5402
+    頻道：@Haven 提及即可
+    邀請：未公開，需 Cris 加你
+
+  Telegram:
+    名稱：@Haven_Core_Bot
+    DM：直接訊息即可
+    群組：需要加入群組先用到
+
+【基本對話】
+直接打字就得。Haven 會自動判斷需要唔需要用工具。
+
+  例子：
+    「你好」 → 普通對話
+    「README.md 嘅內容係咩」 → 自動用 read_file 讀取
+    「幫我寫一個 Python script」 → 自動用 write_file 寫入
+
+【可用工具 — 19 個】
+
+  檔案操作：
+    read_file     讀取檔案內容
+    write_file    寫入檔案（受保護檔案不能覆寫）
+    send_file     傳送檔案俾你（支援 Discord / Telegram）
+
+  系統操作：
+    execute_command  執行 Shell 指令（政策受限）
+    background_task  背景執行任務
+    spawn_child      開子任務處理複雜工作
+
+  搜尋功能：
+    web_search    網路搜尋（Tavily）
+    memory_search 長期記憶搜尋
+
+  任務管理：
+    query_task     查詢任務狀態
+    cancel_task    取消任務
+    list_tasks     列出進行中任務
+    send_task_message     傳訊息俾背景任務
+    check_task_messages   檢查任務郵箱
+
+  排程功能：
+    add_schedule     新增定時任務
+    remove_schedule  移除定時任務
+    list_schedules   列出所有排程
+    pause_schedule   暫停排程
+    resume_schedule  繼續排程
+
+  系統設定：
+    set_model   切換模型（deepseek / openrouter）
+
+【傳送檔案 — 注意】
+向 Haven 要求傳檔案時，佢會用 send_file 工具處理。
+Discord 版：自動用 discord.File 附件傳送
+Telegram 版：自動用 reply_document 傳送
+
+  例子：
+    「把 README.md 傳給我」
+    「把報表 send 俾我」
+
+【可用模型】
+  主要：DeepSeek v4 Flash（原生 API）
+  備援：Gemma 4（OpenRouter）
+  （可透過 set_model 工具切換）
+
+【系統指令】
+  /clear    清除對話歷史（Discord 限定）
+
+【注意事項】
+  - Haven 係獨立系統，唔係 KID / OpenClaw
+  - 執行 execute_command 時會有政策限制同 rate limit
+  - 傳送大檔案（>8MB）可能被平台限制
+  - 背景任務會 persist，重啟後自動恢復
+  - 排程任務會 persist，重啟後自動恢復
+
+【緊急情況】
+  見 EMERGENCY.md 或聯絡 Cris

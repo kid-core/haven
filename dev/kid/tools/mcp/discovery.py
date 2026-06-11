@@ -20,7 +20,7 @@ async def discover_tools(client: MCPClient, server_name: str) -> list[ToolSpec]:
 
     All MCP tools are:
     - Prefixed with ``mcp__{server_name}__`` to avoid name clashes.
-    - Assigned ``ToolCategory.EXTERNAL``.
+    - Assigned ``ToolCategory.COLLAB``.
     - Default to ``require_confirm=True`` (safe-by-default).
 
     Returns an empty list if the server returns no tools or fails.
@@ -51,7 +51,7 @@ async def discover_tools(client: MCPClient, server_name: str) -> list[ToolSpec]:
             description=desc,
             parameters=input_schema,
             handler=_build_handler(client, name),
-            category=ToolCategory.EXTERNAL,
+            category=ToolCategory.COLLAB,
             policy=ToolPolicy(require_confirm=True, timeout=30.0, rate_limit=10.0),
         )
         specs.append(spec)

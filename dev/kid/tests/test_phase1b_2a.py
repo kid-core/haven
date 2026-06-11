@@ -14,20 +14,20 @@ class TestCategoryRouter:
             assert cat in DEFAULT_RULES, f"Missing rule for {cat}"
 
     def test_execution_modes_match_design(self):
-        assert DEFAULT_RULES[ToolCategory.FILES].mode == ExecutionMode.INLINE
-        assert DEFAULT_RULES[ToolCategory.SYSTEM].mode == ExecutionMode.INLINE
-        assert DEFAULT_RULES[ToolCategory.AI].mode == ExecutionMode.AI_PROXY
-        assert DEFAULT_RULES[ToolCategory.EXTERNAL].mode == ExecutionMode.EXTERNAL
+        assert DEFAULT_RULES[ToolCategory.FILE].mode == ExecutionMode.INLINE
+        assert DEFAULT_RULES[ToolCategory.ENV].mode == ExecutionMode.INLINE
+        assert DEFAULT_RULES[ToolCategory.MEDIA].mode == ExecutionMode.AI_PROXY
+        assert DEFAULT_RULES[ToolCategory.COLLAB].mode == ExecutionMode.EXTERNAL
 
     def test_should_inline(self):
         cr = CategoryRouter()
-        assert cr.should_inline(ToolCategory.FILES) is True
-        assert cr.should_inline(ToolCategory.AI) is False
+        assert cr.should_inline(ToolCategory.FILE) is True
+        assert cr.should_inline(ToolCategory.MEDIA) is False
 
     def test_needs_provider(self):
         cr = CategoryRouter()
-        assert cr.needs_provider(ToolCategory.AI) is True
-        assert cr.needs_provider(ToolCategory.FILES) is False
+        assert cr.needs_provider(ToolCategory.MEDIA) is True
+        assert cr.needs_provider(ToolCategory.FILE) is False
 
     def test_provider_management(self):
         from core.base_provider import BaseProvider
@@ -50,10 +50,10 @@ class TestCategoryRouter:
     def test_custom_rule_override(self):
         cr = CategoryRouter()
         cr.set_rule(
-            ToolCategory.WEB,
+            ToolCategory.ENV,
             CategoryRule(mode=ExecutionMode.AI_PROXY, provider_role="vision"),
         )
-        rule = cr.get_rule(ToolCategory.WEB)
+        rule = cr.get_rule(ToolCategory.ENV)
         assert rule.mode == ExecutionMode.AI_PROXY
         assert rule.provider_role == "vision"
 
