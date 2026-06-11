@@ -35,8 +35,9 @@ class DiscordAdapter(TransportAdapter):
         router: Router,
         bot: discord.Client | None = None,
         allowed_user_ids: list[str] | None = None,
+        command_handler: Any | None = None,
     ) -> None:
-        super().__init__(router, allowed_user_ids, transport_name="Discord")
+        super().__init__(router, allowed_user_ids, transport_name="Discord", command_handler=command_handler)
         self._bot = bot
 
     # ── Primitives ─────────────────────────────────────────────
@@ -129,7 +130,7 @@ class DiscordBot(discord.Client):
         await self._adapter.handle_message(message)
 
 
-def run_discord(router: Router) -> DiscordHandle:
+def run_discord(router: Router, command_handler: Any | None = None) -> DiscordHandle:
     """Start the Discord bot and return a handle for notifications."""
     token = config.discord_token
     if not token:
@@ -142,7 +143,7 @@ def run_discord(router: Router) -> DiscordHandle:
     intents.message_content = True
     intents.guild_messages = True
 
-    adapter = DiscordAdapter(router)
+    adapter = DiscordAdapter(router, command_handler=command_handler)
     bot = DiscordBot(adapter, intents)
     adapter._bot = bot
 

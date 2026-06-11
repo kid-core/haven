@@ -30,6 +30,13 @@ from core.config import config  # noqa: E402
 class TelegramAdapter(TransportAdapter):
     """Telegram transport — thin protocol wrapper over TransportAdapter."""
 
+    def __init__(
+        self,
+        router: Router,
+        command_handler: Any | None = None,
+    ) -> None:
+        super().__init__(router, transport_name="Telegram", command_handler=command_handler)
+
     async def _send_text(self, channel_id: str, text: str) -> bool:
         # Telegram uses chat_id directly as integer
         try:
@@ -102,14 +109,14 @@ class TelegramHandle:
             logger.warning("Telegram shutdown error: %s", exc)
 
 
-def run_telegram(router: Router) -> TelegramHandle:
+def run_telegram(router: Router, command_handler: Any | None = None) -> TelegramHandle:
     """Start the Telegram bot and return a handle for notifications + shutdown."""
     token = config.telegram_token
     if not token:
         logger.warning("HAVEN_TELEGRAM_TOKEN not set — Telegram will not start")
         return TelegramHandle(app=None)
 
-    adapter = TelegramAdapter(router)
+    adapter = TelegramAdapter(router, command_handler=command_handler)
 
     app = (
         Application.builder()

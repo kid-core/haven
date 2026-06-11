@@ -127,6 +127,11 @@ async def main() -> None:
     # ── System prompt (P4a layered assembler) ───────────────────────
     identity_prompt = build_system_prompt()
     assembler = SystemPromptAssembler(identity_text=identity_prompt)
+    # P4d — inject active goals into context after runtime layer
+    assembler.register_layer("goals",
+        lambda ctx: goal_manager.inject_into_context(),
+        after="runtime",
+    )
     session_store = SessionStore()
     transports = []
     if config.discord_token:
@@ -184,13 +189,13 @@ async def main() -> None:
         logger.info("Terminal skipped (background mode)")
 
     # Discord (background task) — returns handle for notifications
-    discord = run_discord(router)
+    discord = run_discord(router, command_handler=command_handler)
     tasks.append(discord.task)
 
     # Telegram (background) — returns handle for notifications + shutdown
     # NOTE: run_telegram starts polling in a background task that completes
     # quickly — lifecycle is managed via telegram.shutdown(), not task tracking.
-    telegram = run_telegram(router)
+    telegram = run_telegram(router, command_handler=command_handler)
 
     # ── Heartbeat Monitor ──────────────────────────────────────────
     heartbeat = HeartbeatMonitor(
