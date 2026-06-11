@@ -48,7 +48,6 @@ class DiscordAdapter(TransportAdapter):
         if self._bot is None:
             logger.warning("Discord _send_text: bot is None")
             return False
-        # Use fetch_channel to reach DM channels that may not be in cache after restart
         try:
             channel = self._bot.get_channel(int(channel_id))
             if channel is None:
@@ -59,6 +58,46 @@ class DiscordAdapter(TransportAdapter):
         logger.info("Discord _send_text: channel=%s text=%r", channel_id, text[:100])
         await channel.send(text)
         return True
+
+    async def _send_progress(self, channel_id: str, text: str) -> str | None:
+        """Send a progress message. Returns Discord message id."""
+        if self._bot is None:
+            return None
+        try:
+            channel = self._bot.get_channel(int(channel_id))
+            if channel is None:
+                channel = await self._bot.fetch_channel(int(channel_id))
+        except Exception as exc:
+            logger.warning("Discord _send_progress: channel %s not found — %s", channel_id, exc)
+            return None
+        msg = await channel.send(text)
+        return str(msg.id)
+
+    async def _edit_progress(self, channel_id: str, msg_id: str, text: str) -> None:
+        """Edit an existing progress message."""
+        if self._bot is None:
+            return
+        try:
+            channel = self._bot.get_channel(int(channel_id))
+            if channel is None:
+                channel = await self._bot.fetch_channel(int(channel_id))
+            msg = await channel.fetch_message(int(msg_id))
+            await msg.edit(content=text)
+        except Exception as exc:
+            logger.debug("Discord _edit_progress: %s", exc)
+
+    async def _delete_progress(self, channel_id: str, msg_id: str) -> None:
+        """Delete a progress message."""
+        if self._bot is None:
+            return
+        try:
+            channel = self._bot.get_channel(int(channel_id))
+            if channel is None:
+                channel = await self._bot.fetch_channel(int(channel_id))
+            msg = await channel.fetch_message(int(msg_id))
+            await msg.delete()
+        except Exception as exc:
+            logger.debug("Discord _delete_progress: %s", exc)
 
     async def _send_file(self, channel_id: str, file_path: str, filename: str) -> bool:
         if self._bot is None:

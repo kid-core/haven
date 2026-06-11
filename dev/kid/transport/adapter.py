@@ -56,6 +56,17 @@ class TransportAdapter:
         """Send a text message. Return True on success."""
         raise NotImplementedError
 
+    async def _send_progress(self, channel_id: str, text: str) -> str | None:
+        """Send a progress message. Returns message_id for later edit/delete."""
+        await self._send_text(channel_id, text)
+        return None  # default: no tracking (terminal, telegram)
+
+    async def _edit_progress(self, channel_id: str, msg_id: str, text: str) -> None:
+        """Edit an existing progress message. Default no-op."""
+
+    async def _delete_progress(self, channel_id: str, msg_id: str) -> None:
+        """Delete a progress message. Default no-op."""
+
     async def _send_file(self, channel_id: str, file_path: str, filename: str) -> bool:
         """Send a file attachment. Return True on success."""
         raise NotImplementedError
@@ -105,8 +116,11 @@ class TransportAdapter:
 
         from core.config import config
 
+        _progress_msg_id: str | None = None  # single tracked progress message
+
         async def _on_progress(event: dict) -> None:
-            """Forward tool-call progress to the transport (opt-in via config)."""
+            """Forward tool-call progress (single message, edited per tool, deleted at end)."""
+            nonlocal _progress_msg_id
             if not config.show_tool_calls:
                 return
             if event.get("type") == "tool_call":
@@ -115,10 +129,18 @@ class TransportAdapter:
                 arg_str = " ".join(f"{k}={v}" for k, v in args.items())
                 if len(arg_str) > 80:
                     arg_str = arg_str[:77] + "..."
-                await self._send_text(
-                    channel_id,
-                    f"⚙️ `{name}` {arg_str}".strip(),
-                )
+                text = f"⚙️ `{name}` {arg_str}".strip()
+                if _progress_msg_id:
+                    await self._edit_progress(channel_id, _progress_msg_id, text)
+                else:
+                    _progress_msg_id = await self._send_progress(channel_id, text)
+
+        async def _cleanup_progress() -> None:
+            """Delete the progress message after final response."""
+            nonlocal _progress_msg_id
+            if _progress_msg_id:
+                await self._delete_progress(channel_id, _progress_msg_id)
+                _progress_msg_id = None
 
         try:
             # P4d — intercept /goal commands before Router
@@ -134,6 +156,8 @@ class TransportAdapter:
                 reply = await self._router.process(
                     clean, session_id=session_id, on_progress=_on_progress,
                 )
+            # Delete progress message(s) before sending final reply
+            await _cleanup_progress()
             pending_files = self._router.pop_pending_files(session_id)
         except Exception as exc:
             logger.exception("Router error for %s message", self._transport_name)
