@@ -20,12 +20,43 @@ import sys as _sys
 _sys.path.insert(0, "/mnt/z/Haven")
 
 from .tool_registry import PolicyBlockedError, ToolRegistry
+
+# ── Tool result uncertainty detection ──────────────────────────────
+
+_UNCERTAINTY_PATTERNS = (
+    "error", "failed", "not found", "permission denied",
+    "cannot", "unable to", "timeout", "invalid",
+)
+
+
+def _is_uncertain_tool_result(result: str) -> bool:
+    """Detect tool results that warrant an advisor consultation.
+
+    Handles both plain-text results and JSON-wrapped tool outputs by
+    extracting the ``data`` field from JSON envelopes before checking.
+    """
+    low = result.lower()
+    # Try JSON envelope — if status is "error", it's uncertain
+    try:
+        import json
+        envelope = json.loads(result)
+        if isinstance(envelope, dict):
+            if envelope.get("status") == "error":
+                return True
+            # Extract inner data/content for plain checks
+            inner = envelope.get("data") or envelope.get("content") or ""
+            if isinstance(inner, str):
+                low = inner.lower()
+    except (json.JSONDecodeError, TypeError):
+        pass  # not JSON, check raw text
+    return any(p in low for p in _UNCERTAINTY_PATTERNS)
 from agent.tool_output import wrap_output
 from .pending_file import PendingFileStore, set_pending_file_store, set_current_session
 
 if TYPE_CHECKING:
     from learning.skill_store import SkillStore
     from soul.memory import LongTermMemory, SessionStore
+    from .advisor import Advisor
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +86,7 @@ class Router(BaseReActLoop):
         category_router: CategoryRouter | None = None,
         transport_names: list[str] | None = None,
         budget_tracker: BudgetTracker | None = None,
+        advisor: Advisor | None = None,
     ) -> None:
         # Normalise: single provider -> list of one
         if isinstance(providers, BaseProvider):
@@ -69,6 +101,7 @@ class Router(BaseReActLoop):
         self._system_prompt = system_prompt
         self._prompt_assembler = prompt_assembler
         self._budget_tracker = budget_tracker
+        self._advisor = advisor
         self._transport_names = transport_names or []
         self._history: dict[str, list[dict[str, Any]]] = {}
         self._session_store = session_store
@@ -282,6 +315,20 @@ class Router(BaseReActLoop):
                         tool_call_id=tc_id, name=name, arguments=arguments,
                     )
                 messages.append(result_msg)
+
+                # P4d-B — Advisor consultation when tool returns error/uncertain result
+                if self._advisor is not None:
+                    result_text = result_msg.get("content", "")
+                    if _is_uncertain_tool_result(result_text):
+                        advisor_suggestion = await self._advisor.consult(
+                            f"Tool '{name}' returned: {result_text[:500]}",
+                        )
+                        if advisor_suggestion:
+                            logger.info("Advisor suggests: %s", advisor_suggestion)
+                            messages.append({
+                                "role": "system",
+                                "content": f"[Advisor] {advisor_suggestion}",
+                            })
 
         self._save_history(session_id, messages)
         return TURN_LIMIT_MESSAGE
