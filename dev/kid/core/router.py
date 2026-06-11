@@ -14,6 +14,7 @@ from .base_provider import BaseProvider
 from .base_react_loop import BaseReActLoop, _clean, TURN_LIMIT_MESSAGE
 from .category_router import CategoryRouter, ExecutionMode
 from .paths import ltm_dir
+from .prompt_assembler import SystemPromptAssembler
 import sys as _sys
 _sys.path.insert(0, "/mnt/z/Haven")
 
@@ -45,6 +46,7 @@ class Router(BaseReActLoop):
         tool_registry: ToolRegistry,
         providers: list[tuple[BaseProvider, str | None]] | BaseProvider,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        prompt_assembler: SystemPromptAssembler | None = None,
         session_store: SessionStore | None = None,
         long_term_memory: LongTermMemory | None = None,
         skill_store: SkillStore | None = None,
@@ -63,6 +65,7 @@ class Router(BaseReActLoop):
         super().__init__(tool_registry, norm_providers)
 
         self._system_prompt = system_prompt
+        self._prompt_assembler = prompt_assembler
         self._transport_names = transport_names or []
         self._history: dict[str, list[dict[str, Any]]] = {}
         self._session_store = session_store
@@ -424,8 +427,11 @@ class Router(BaseReActLoop):
                     self._history[session_id] = stored
                     return self._history[session_id]
 
-            # Build system prompt with memory + learned skills context
-            prompt = self._system_prompt
+            # Build system prompt — use P4a assembler when available
+            if self._prompt_assembler is not None:
+                prompt = self._prompt_assembler.build(session_id=session_id)
+            else:
+                prompt = self._system_prompt
             if self._long_term_memory is not None:
                 important = self._long_term_memory.get_important(limit=8)
                 if important:

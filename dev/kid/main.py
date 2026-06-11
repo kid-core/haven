@@ -24,7 +24,9 @@ import tools  # noqa: E402, F401 — triggers @tool registration (needs .env loa
 from core.category_router import CategoryRouter  # noqa: E402
 from core.heartbeat import HeartbeatMonitor  # noqa: E402
 from core.http_provider import HttpProvider  # noqa: E402
+from core.prompt_assembler import SystemPromptAssembler  # noqa: E402
 from core.router import Router  # noqa: E402
+from core.config import config
 from core.tool_decorator import get_default_registry  # noqa: E402
 from learning.skill_store import SkillStore  # noqa: E402
 from soul.identity import build_system_prompt  # noqa: E402
@@ -33,8 +35,9 @@ from transport import run_discord, run_telegram, run_terminal  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-PRIMARY_MODEL = os.getenv("HAVEN_PRIMARY_MODEL", "deepseek-v4-flash")
-FALLBACK_MODEL = os.getenv("HAVEN_FALLBACK_MODEL", "google/gemma-4-26b-a4b-it")
+PRIMARY_MODEL = config.primary_model
+FALLBACK_MODEL = config.fallback_model
+TERTIARY_MODEL = config.tertiary_model
 
 # Global shutdown event — set when SIGINT/SIGTERM is received
 _shutdown_event: asyncio.Event | None = None
@@ -83,9 +86,23 @@ async def main() -> None:
             "X-Title": "Haven",
         },
     )
+    # ── ARK / BytePlus 備用 (tertiary) ───────────────────────────
+    ark_provider = None
+    if os.getenv("ARK_API_KEY"):  # secret, stays in env
+        ark_provider = HttpProvider(
+            name="Ark",
+            model=TERTIARY_MODEL,
+            base_url="https://ark.ap-southeast.bytepluses.com/api/v3/chat/completions",
+            api_key_env="ARK_API_KEY",
+            default_temperature=0.3,
+        )
+
     providers: list[tuple[HttpProvider, str | None]] = [
-        (deepseek, None), (openrouter, None)
+        (deepseek, None),
+        (openrouter, None),
     ]
+    if ark_provider:
+        providers.append((ark_provider, None))
 
     # ── Category Router (Phase 1b) + Ollama vision (Phase 2b) ──────
     cat_router = CategoryRouter()
@@ -107,18 +124,35 @@ async def main() -> None:
     logger.info("Skills: %d active, %d drafts",
                 len(skill_store.get_active()), len(skill_store.get_drafts()))
 
-    # ── System prompt ───────────────────────────────────────────────
-    system_prompt = build_system_prompt()
+    # ── System prompt (P4a layered assembler) ───────────────────────
+    identity_prompt = build_system_prompt()
+    assembler = SystemPromptAssembler(identity_text=identity_prompt)
     session_store = SessionStore()
+    transports = []
+    if config.discord_token:
+        transports.append("Discord")
+    if config.telegram_token:
+        transports.append("Telegram")
+
     router = Router(
         registry,
         providers=providers,
-        system_prompt=system_prompt,
+        prompt_assembler=assembler,
         session_store=session_store,
         long_term_memory=ltm,         # Phase 2a — memory injection + auto-summarise
         skill_store=skill_store,       # Phase 3 — learned skill injection
         category_router=cat_router,    # Phase 1b — category-aware execution
+        transport_names=transports,
     )
+
+    # ── Restore persisted tasks (Phase 9) ─────────────────────────
+    restore_info = await router.restore_tasks()
+    if restore_info["restored"] > 0:
+        logger.info(
+            "Restored %d task records (%d interrupted by restart)",
+            restore_info["restored"],
+            restore_info["interrupted"],
+        )
 
     # ── Banner ──────────────────────────────────────────────────────
     print("")
@@ -127,6 +161,8 @@ async def main() -> None:
     print("=" * 50)
     print(f"  Primary:   DeepSeek {PRIMARY_MODEL}")
     print(f"  Fallback:  OpenRouter {FALLBACK_MODEL}")
+    if ark_provider:
+        print(f"  Tertiary:  Ark {ark_provider.get_model()}")
     print(f"  Tools:     {[s.name for s in registry]}")
     print(f"  Memory:    {len(ltm)} entries")
     print(f"  Skills:    {len(skill_store.get_active())} active, {len(skill_store.get_drafts())} drafts")
@@ -134,11 +170,15 @@ async def main() -> None:
     print("=" * 50)
     print("")
 
+    # ── Scheduler (Phase 7) ───────────────────────────────────────
+    await router.start_scheduler()
+    logger.info("Scheduler started")
+
     # ── Transports ──────────────────────────────────────────────────
     tasks: list[asyncio.Task] = []
 
     # Terminal (only when stdin is interactive)
-    if not os.getenv("HAVEN_NO_TERMINAL"):
+    if not config.no_terminal:
         tasks.append(asyncio.create_task(run_terminal(router)))
     else:
         logger.info("Terminal skipped (background mode)")
@@ -148,16 +188,18 @@ async def main() -> None:
     tasks.append(discord.task)
 
     # Telegram (background) — returns handle for notifications + shutdown
+    # NOTE: run_telegram starts polling in a background task that completes
+    # quickly — lifecycle is managed via telegram.shutdown(), not task tracking.
     telegram = run_telegram(router)
 
     # ── Heartbeat Monitor ──────────────────────────────────────────
     heartbeat = HeartbeatMonitor(
-        interval=float(os.getenv("HAVEN_HEARTBEAT_INTERVAL", "30")),
-        threshold=int(os.getenv("HAVEN_HEARTBEAT_THRESHOLD", "3")),
+        interval=config.heartbeat_interval,
+        threshold=config.heartbeat_threshold,
     )
-    notify_discord_ch = int(os.getenv("HAVEN_HEARTBEAT_DISCORD_CHANNEL", "0"))
-    notify_discord_user = int(os.getenv("HAVEN_HEARTBEAT_DISCORD_USER", "0"))
-    notify_telegram_chat = int(os.getenv("HAVEN_HEARTBEAT_TELEGRAM_CHAT", "0"))
+    notify_discord_ch = config.heartbeat_discord_channel
+    notify_discord_user = config.heartbeat_discord_user
+    notify_telegram_chat = config.heartbeat_telegram_chat
 
     async def _heartbeat_notify(is_down: bool, message: str) -> None:
         """Notify via Haven's own channels using transport handles."""
@@ -197,6 +239,8 @@ async def main() -> None:
     await deepseek.close()
     await openrouter.close()
     await heartbeat.close()
+    await router.close_scheduler()
+    await router.task_manager.close()
 
     print("\n🛑 Haven shut down gracefully.")
 
@@ -206,7 +250,7 @@ if __name__ == "__main__":
     from core.paths import log_file as _log_file
     LOG_FILE = str(_log_file())
     handlers: list = [logging.FileHandler(LOG_FILE, mode="w")]
-    if not os.getenv("HAVEN_NO_TERMINAL"):
+    if not config.no_terminal:
         handlers.insert(0, logging.StreamHandler())
     logging.basicConfig(
         level=logging.INFO,
