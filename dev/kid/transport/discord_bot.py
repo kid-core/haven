@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from core.config import config
+
 if TYPE_CHECKING:
     from core.router import Router
 
@@ -44,18 +46,28 @@ class DiscordAdapter(TransportAdapter):
 
     async def _send_text(self, channel_id: str, text: str) -> bool:
         if self._bot is None:
+            logger.warning("Discord _send_text: bot is None")
             return False
-        channel = self._bot.get_channel(int(channel_id))
-        if channel is None:
+        # Use fetch_channel to reach DM channels that may not be in cache after restart
+        try:
+            channel = self._bot.get_channel(int(channel_id))
+            if channel is None:
+                channel = await self._bot.fetch_channel(int(channel_id))
+        except Exception as exc:
+            logger.warning("Discord _send_text: channel %s not found — %s", channel_id, exc)
             return False
+        logger.info("Discord _send_text: channel=%s text=%r", channel_id, text[:100])
         await channel.send(text)
         return True
 
     async def _send_file(self, channel_id: str, file_path: str, filename: str) -> bool:
         if self._bot is None:
             return False
-        channel = self._bot.get_channel(int(channel_id))
-        if channel is None:
+        try:
+            channel = self._bot.get_channel(int(channel_id))
+            if channel is None:
+                channel = await self._bot.fetch_channel(int(channel_id))
+        except Exception:
             return False
         await channel.send(file=discord.File(file_path, filename=filename))
         return True
@@ -124,6 +136,7 @@ class DiscordBot(discord.Client):
             self.user and self.user.mentioned_in(message)
             or haven_role_id in message.raw_role_mentions
             or isinstance(message.channel, discord.DMChannel)
+            or message.channel.id in config.listen_channels
         ):
             return
 

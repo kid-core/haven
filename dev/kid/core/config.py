@@ -85,6 +85,13 @@ class HavenConfig:
         default_factory=lambda: int(os.getenv("HAVEN_HEARTBEAT_TELEGRAM_CHAT", "0")),
     )
 
+    # ── Channel whitelist (no @mention required) ───────────────
+    listen_channels: list[int] = field(
+        default_factory=lambda: [
+            int(c.strip()) for c in os.getenv("HAVEN_LISTEN_CHANNELS", "").split(",") if c.strip()
+        ],
+    )
+
     # ── Memory eviction ────────────────────────────────────────
     memory_max_entries: int = field(
         default_factory=lambda: int(os.getenv("HAVEN_MEMORY_MAX_ENTRIES", "1000")),
