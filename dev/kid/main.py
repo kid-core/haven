@@ -162,6 +162,9 @@ async def main() -> None:
             restore_info["interrupted"],
         )
 
+    # P4d-ext — wire Scheduler into CommandHandler for /cron
+    command_handler.set_scheduler(router.scheduler)
+
     # ── Banner ──────────────────────────────────────────────────────
     print("")
     print("=" * 50)

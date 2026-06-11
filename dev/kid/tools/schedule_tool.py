@@ -58,7 +58,7 @@ def _record_to_dict(record) -> dict:
 @tool(
     name="add_schedule",
     category=ToolCategory.ENV,
-    policy=ToolPolicy(timeout=10.0, require_confirm=True),
+    policy=ToolPolicy(timeout=10.0),
 )
 async def add_schedule(
     name: str,
@@ -119,7 +119,7 @@ async def add_schedule(
 @tool(
     name="remove_schedule",
     category=ToolCategory.ENV,
-    policy=ToolPolicy(timeout=5.0, require_confirm=True),
+    policy=ToolPolicy(timeout=5.0),
 )
 async def remove_schedule(schedule_id: str) -> dict:
     """Remove a schedule by its 12-character id.
