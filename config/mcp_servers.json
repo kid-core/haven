@@ -1,0 +1,9 @@
+[
+  {
+    "name": "codebase-memory",
+    "transport": "stdio",
+    "command": "/root/.local/bin/codebase-memory-mcp",
+    "args": [],
+    "enabled": true
+  }
+]

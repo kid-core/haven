@@ -1,0 +1,60 @@
+# config/providers.toml
+# ============================================================
+# Haven Provider Registry
+# 加/減/改 LLM provider 只需改呢個檔
+# API key 照舊放 .env，呢度只寫 env var 名
+# ============================================================
+
+[providers.deepseek]
+name = "DeepSeek"
+model_env = "HAVEN_PRIMARY_MODEL"
+model_fallback = "deepseek-v4-flash"
+base_url = "https://api.deepseek.com/v1/chat/completions"
+api_key_env = "DEEPSEEK_API_KEY"
+temperature = 0.3
+priority = 1
+optional = false
+
+[providers.openrouter]
+name = "OpenRouter"
+model_env = "HAVEN_FALLBACK_MODEL"
+model_fallback = "google/gemma-4-26b-a4b-it"
+base_url = "https://openrouter.ai/api/v1/chat/completions"
+api_key_env = "OPENROUTER_API_KEY"
+temperature = 0.7
+priority = 2
+optional = false
+
+[providers.openrouter.headers]
+HTTP-Referer = "https://github.com/cris0101_fx/haven"
+X-Title = "Haven"
+
+[providers.ds_flash]
+name = "DeepSeek Flash"
+model_env = "HAVEN_FLASH_MODEL"
+model_fallback = "deepseek-v4-flash"
+base_url = "https://api.deepseek.com/v1/chat/completions"
+api_key_env = "DEEPSEEK_API_KEY"
+temperature = 0.3
+priority = 3
+optional = true
+
+[providers.ark]
+name = "Ark"
+model_env = "HAVEN_TERTIARY_MODEL"
+model_fallback = "seed-2-0-lite"
+base_url = "https://ark.ap-southeast.bytepluses.com/api/v3/chat/completions"
+api_key_env = "ARK_API_KEY"
+temperature = 0.3
+priority = 4
+optional = true
+
+[providers.ollama_vision]
+type = "ollama"
+name = "Ollama-minicpm-v"
+model_fallback = "minicpm-v:latest"
+host = "localhost"
+port = 11434
+category = "vision"
+priority = 5
+optional = true

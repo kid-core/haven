@@ -30,3 +30,9 @@ sync_log.txt
 .openclaw/
 dev/log/
 data/
+tmp/
+quarantine/
+Trash/
+haven.lock
+.debris/
+.megaignore
